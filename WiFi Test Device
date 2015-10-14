@@ -1,0 +1,574 @@
+// Device Code
+
+imp.setpowersave(true);                                                                                                                                           
+                                                                                                                                                                  
+disconnectReason <- "";                                                                                                                                           
+function getDisconnectReason(reason) 
+{                                                                                                                            
+    if (reason == NO_WIFI) 
+    {    return "Wifi went away";                                                                                                                                  
+    }                                                                                                                                                             
+    if (reason == NO_IP_ADDRESS) 
+    {   return "Failed to get IP address";                                                                                                                        
+    }                                                                                                                                                             
+    if (reason == NO_SERVER) 
+    {   return "Failed to connect to server";                                                                                                                     
+    }                                                                                                                                                             
+    if (reason == NOT_RESOLVED) 
+    {   return "Failed to resolve server";                                                                                                                        
+    }                                                                                                                                                             
+    return ""                                                                                                                                                     
+}                                                                                                                                                                 
+                                                                                                                                                                  
+function onConnected(status) 
+{                                                                                                                                    
+    if (status == SERVER_CONNECTED) 
+    {   server.log("Reconnected after unexpected disconnect " +  disconnectReason);                                                                               
+    }                                                                                                                                                      
+}
+
+function tryToConnect() 
+{                                                                                                                                          
+    if (!server.isconnected()) 
+    {                                                                                                                                  
+        server.connect(onConnected, 30);                                                                                                                          
+        imp.wakeup(120, tryToConnect);                                                                                                                            
+    }                                                                                                                                                            
+} 
+
+function onUnexpectedDisconnect(status) 
+{                                                                                                                         
+    disconnectReason = getDisconnectReason(status);                                                                                         
+    imp.wakeup(120, tryToConnect);                                                                                                         
+}  
+
+// Chem pump code for WellMark project
+// Reads modbus info from TimeMark controller
+// and reports it back to Xively
+// Can write commands to Modbus controller
+// for changing quarts per day, and shutting
+// down motor if 0 quarts per day
+// Can read analog pressure if needed
+// Reads flow meter Hall effect switch
+
+function getTemp()                                                                                                                                                
+{                                                                                                                                                                 
+    local analogval;
+    if(nv.board == "No Version Yet")
+    {
+        // Old sensor temp on pin 5
+        analogval = hardware.pin5.read(); // 0 - 65535 
+
+    } else if (nv.board == "version_021914")
+    {
+        // New sensor temp on pin 8
+        analogval = hardware.pin8.read(); // 0 - 65535 
+    }
+    
+//    local analogval = hardware.pin5.read(); // 0 - 65535                                                                                                          
+    local tempC = ((analogval * 0.00005035)-0.5)*100.0;                                                                                                           
+    local tempF = (9.0/5.0)*tempC + 32.0;                                                                                                                         
+    nv.Temperature = tempF; // set global temp var 
+    return tempF;
+}                                                                                                                                                                 
+                 
+// The imp has 12 bit ADC and maps it across 65536 range                                                                                                          
+// so 0-3.3V maps to 0-65535  
+function getBatteryVoltage()
+{
+    // Both old and new board use pin 9
+    local adval = hardware.pin9.read(); // 0 - 65535
+    local volts = (hardware.voltage()/4096.0) * (adval/16.0); 
+    // R1 = 357k and R2 = 96.7k (actual measurements)
+    // Vbat = V (R1 + R2)/R2    // from the voltage divider
+    local vbat = volts * (357.0 + 100.0)/100.0;
+    nv.Status_vbat = vbat; // assign to global variable
+    
+    // Also get switch values
+    nv.Switch = hardware.pin1.read();
+    nv.Switch1 = hardware.pin2.read();
+    
+    return vbat;
+}
+
+function getVolts() 
+{
+    // Both old and new board use pin 7 for analog input
+    local analogval = hardware.pin7.read(); // 0 - 65535 
+    local volts = (hardware.voltage()/4096.0) * (analogval/16.0);
+    nv.Volts = volts;
+    return volts;
+}
+
+function byteArrayString(arr)
+{
+    local str = ""
+    for(local i = 0; i < arr.len(); i++)
+    {
+        if(arr[i] == null) break;
+        str = str + format("%.2X ", arr[i]);
+    }
+    return str;
+}
+
+// Pass values from agent to device with these routines
+
+// Get quarts per day info
+agent.on("newsetpoint", 
+    function(newsetpoint) 
+    {
+// DEBUG        server.log("Setting QuartsPerDay to: " + newsetpoint);
+        writeQuartsPerDay(newsetpoint);
+    });
+
+// Get sample interval from agent
+agent.on("interval", 
+    function(interval)
+    {
+        nv.gformin <- interval.interval;
+//       server.log("**Received sample interval: "+nv.gformin);
+});
+
+// get voltage enable from agent
+// determines the polarity of enable signal
+agent.on("voltage_enable", 
+    function(voltage_enable)
+    {
+        nv.voltage_enable <- voltage_enable.voltage_enable.tointeger();
+//        server.log("***Received voltage_enable: "+nv.voltage_enable);
+});
+
+// Get name of Xively feed
+agent.on("XivelyName", 
+    function(XivelyName)
+    {
+        nv.xively <- XivelyName.XivelyName;
+        nv.type <- XivelyName.XivelyType;
+    //    server.log("**Received Xively Name: "+nv.xively);
+});
+
+// Get the board version 
+agent.on("board",
+        function(board)
+        {
+            nv.board <- board.board;
+//            server.log("+++Received board version: "+nv.board);
+        });
+
+// Turn motor on/off
+// If quarts per day is set to 0, turn motor off
+function setMotorState(state) 
+{
+    local motorCommand = [];
+    if (state == 1) 
+    {
+      motorCommand = [ 0x10, 0x05, 0x00, 0x01, 0xFF, 0x00, 0xDE, 0xBB ];
+    } else 
+    {
+        motorCommand = [ 0x10, 0x05, 0x00, 0x01, 0x00, 0x00, 0x9F, 0x4B ]; 
+    }
+    
+// DEBUG    server.log("Setting motor to: " + state);
+    imp.sleep(100.0/1000.0);
+    hardware.pin2.write(1);
+//    imp.sleep(100.0/1000.0);
+    foreach(val in motorCommand) 
+    {
+        hardware.uart1289.write(val);
+    }
+    imp.sleep(10.0/1000.0);
+    hardware.pin2.write(0);
+//    imp.sleep(100.0/1000.0);
+    imp.sleep(10.0/1000.0);
+} // function setMotorState(state) 
+
+// Handle quarts per day settings
+// If qpd set to 0, turn motor off
+function writeQuartsPerDay(value) 
+{
+    // hex string "10 06 00 03 41 28 00 00 F7 33"
+    // Modbus address - 0x10
+    // command - 0x06
+    // register - 0x0003
+    // data (32 bit float) 0x41280000
+    // CRC 0xF733
+    
+    if (value > 0.1)
+        setMotorState(1);
+    else
+        setMotorState(0);
+    
+    if (value > 0.1) 
+    {
+//        local qpdCommand = [ 0x10, 0x06, 0x00, 0x03 ];
+         local qpdCommand = [ 0x10, 0x10, 0x00, 0x03, 0x00, 0x02, 0x04 ];
+        
+        local flBlob = blob(4);
+        flBlob.writen(value.tofloat(), 'f');
+        
+        qpdCommand.append(flBlob[3]);
+        qpdCommand.append(flBlob[2]);
+        qpdCommand.append(flBlob[1]);
+        qpdCommand.append(flBlob[0]);
+        
+        local crc = calculateCRC(qpdCommand, qpdCommand.len());
+        qpdCommand.extend(crc);
+        
+//        server.log("Writing quarts per day");
+//         server.log("sent: "+byteArrayString(qpdCommand));
+        imp.sleep(10.0/1000.0);
+        hardware.pin2.write(1);
+//        imp.sleep(10.0/1000.0);
+        foreach(val in qpdCommand) 
+        {   hardware.uart1289.write(val);
+        }
+        imp.sleep(15.0/1000.0);
+        hardware.pin2.write(0);
+//        imp.sleep(100.0/1000.0);
+        imp.sleep(10.0/1000.0);
+        
+        // read response from setting qpd
+         local byte = -1;
+    // The a stands for all bytes but I didn't want to type it out so many times.
+        local a = [];
+        while ((byte = hardware.uart1289.read()) != -1) 
+        {
+            a.append(byte);
+            imp.sleep(100.0/1000.0);
+         }
+//        server.log("received: "+byteArrayString(a));
+    } // if (value > 0.1) 
+} // function writeQuartsPerDay(value) 
+
+function writeOnTime()
+{
+    // hex string "10 06 00 00 00 03 1B 48"
+    // Modbus address - 0x10
+    // command - 0x06
+    // register - 0x0000
+    // number of bytes 0x0003
+    // CRC 0x1B48
+    
+    // prepare data stream by filling in the off time integer
+    // 10 06 xx xx 05 xx xx
+    // compose the string with the CRC at the end
+}
+
+function writeOffTime()
+{
+    // hex string "10 06 00 01 00 05 1B 48"
+    // address - 0x10
+    // command - 0x06
+    // data - 0x0001
+    // number of bytes 0x0005
+    // CRC 0x1B48
+    
+    // prepare data stream by filling in the off time integer
+    // 10 06 xx xx 05 xx xx
+    // compose the string with the CRC at the end
+}
+
+// CRC calculation code below is needed for the Modbus
+// data packages.
+/*************************************************/
+/************ CRC Calculation Code ***************/
+/*************************************************/
+
+function xbyteArrayString(arr){
+    local str = ""
+    for(local i = 0; i < arr.len(); i++)
+    {
+        if(arr[i] == null) break;
+        str = str + format("%.2X ", arr[i]);
+    }
+    return str;
+}
+
+// blob of CRC values for high–order byte
+const auchCRCHi = "\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40";
+// blob of CRC values for low–order byte
+const auchCRCLo = "\x00\xC0\xC1\x01\xC3\x03\x02\xC2\xC6\x06\x07\xC7\x05\xC5\xC4\x04\xCC\x0C\x0D\xCD\x0F\xCF\xCE\x0E\x0A\xCA\xCB\x0B\xC9\x09\x08\xC8\xD8\x18\x19\xD9\x1B\xDB\xDA\x1A\x1E\xDE\xDF\x1F\xDD\x1D\x1C\xDC\x14\xD4\xD5\x15\xD7\x17\x16\xD6\xD2\x12\x13\xD3\x11\xD1\xD0\x10\xF0\x30\x31\xF1\x33\xF3\xF2\x32\x36\xF6\xF7\x37\xF5\x35\x34\xF4\x3C\xFC\xFD\x3D\xFF\x3F\x3E\xFE\xFA\x3A\x3B\xFB\x39\xF9\xF8\x38\x28\xE8\xE9\x29\xEB\x2B\x2A\xEA\xEE\x2E\x2F\xEF\x2D\xED\xEC\x2C\xE4\x24\x25\xE5\x27\xE7\xE6\x26\x22\xE2\xE3\x23\xE1\x21\x20\xE0\xA0\x60\x61\xA1\x63\xA3\xA2\x62\x66\xA6\xA7\x67\xA5\x65\x64\xA4\x6C\xAC\xAD\x6D\xAF\x6F\x6E\xAE\xAA\x6A\x6B\xAB\x69\xA9\xA8\x68\x78\xB8\xB9\x79\xBB\x7B\x7A\xBA\xBE\x7E\x7F\xBF\x7D\xBD\xBC\x7C\xB4\x74\x75\xB5\x77\xB7\xB6\x76\x72\xB2\xB3\x73\xB1\x71\x70\xB0\x50\x90\x91\x51\x93\x53\x52\x92\x96\x56\x57\x97\x55\x95\x94\x54\x9C\x5C\x5D\x9D\x5F\x9F\x9E\x5E\x5A\x9A\x9B\x5B\x99\x59\x58\x98\x88\x48\x49\x89\x4B\x8B\x8A\x4A\x4E\x8E\x8F\x4F\x8D\x4D\x4C\x8C\x44\x84\x85\x45\x87\x47\x46\x86\x82\x42\x43\x83\x41\x81\x80\x40";
+ 
+function calculateCRC ( puchMsg, usDataLen )
+{
+    //unsigned char *puchMsg ; // message to calculate CRC upon
+    //unsigned short usDataLen ; // quantity of bytes in message
+    local uchCRCHi = 0xFF ; // high byte of CRC initialized
+    local uchCRCLo = 0xFF ; // low byte of CRC initialized
+    local uIndex ; // will index into CRC lookup table
+    local i = 0;
+    while (usDataLen--)
+    { // pass through message buffer
+        uIndex = uchCRCLo ^ puchMsg[i] ; // calculate the CRC
+        uchCRCLo = uchCRCHi ^ auchCRCHi[uIndex] ;
+        uchCRCHi = auchCRCLo[uIndex] ;
+        i++
+    }
+    return [uchCRCLo, uchCRCHi] ;
+}
+
+/*************************************************/
+/*************************************************/
+
+function requestRegisterInfo()
+{
+    // write hex "10 03 00 00 00 0F 06 8F"
+    local requestRegisters = [ 0x10, 0x03, 0x00, 0x00, 0x00, 0x0F ];
+    local crc = calculateCRC(requestRegisters, requestRegisters.len());
+    requestRegisters.extend(crc);
+    // This requests the register data
+    foreach(val in requestRegisters) 
+    {   hardware.uart1289.write(val);
+    }
+}
+//local crc = calculateCRC([ 0x10, 0x03, 0x00, 0x00, 0x00, 0x0F ], 6);
+//server.log(format("CRC: %x %x", crc[0], crc[1]));
+
+// take pulse samples for the last 5 minutes
+function getFlowRate() 
+{
+    //3785.4 pulses per gallon, 4 quarts in a gallon
+    //122 pulses per minute
+    //16.387 pulses per cubic inch
+    return nv.pulses.len() / 3785.4 / 4 / 2;
+}
+
+
+
+function handleSensor()
+{
+    // Enable regulator
+    if(nv.board == "No Version Yet")
+    {
+        // Old sensor control on pin 8
+        hardware.pin8.write(nv.voltage_enable);
+    } else if (nv.board == "version_021914")
+    {
+        // New sensor control on pin 5
+        hardware.pin5.write(nv.voltage_enable);
+    }
+    // enable regulator
+//    hardware.pin8.write(nv.voltage_enable);
+//    for (local i=0; i < 100000; i++){ i = i; } 
+    imp.sleep(0.5); // give sensors time to power up
+    getTemp();
+    getBatteryVoltage()
+    getVolts(); // read analog channel
+    // Disable regulator
+    if(nv.board == "No Version Yet")
+    {
+        // Old sensor control on pin 8
+        hardware.pin8.write(0x01 ^ nv.voltage_enable);
+    } else if (nv.board == "version_021914")
+    {
+        // New sensor control on pin 5
+        hardware.pin5.write(0x01 ^ nv.voltage_enable);
+    }
+    // disable regulator
+//    hardware.pin8.write(0x01 ^ nv.voltage_enable);
+    agent.send("impid", {ImpID = format("%s",hardware.getimpeeid()), BootCount = nv.count});
+    // Package up Imp data for Xively in csv format
+    agent.send("csv",format("%s,%6.1f\n%s,%6.3f\n%s,%d\n%s,%.4f\n%s,%d\n%s,%.4f\n%s,%.4f\n%s,%d\n%s,%d", 
+    "Status_ImpVolts", hardware.voltage(), 
+    "Status_Signal_Strength", imp.rssi(),
+    "FlowCount", nv.flowcnt,
+    "Volts", nv.Volts,
+    "Status_BootPass", nv.count,
+    "Status_vbat", nv.Status_vbat,
+    "Temperature", nv.Temperature,
+    "Switch", nv.Switch,
+    "Switch1", nv.Switch1
+    ));
+} // function handleSensor()
+
+
+// server.log("Configure!");
+
+// Update a field in the table if it is present                                                                                                                   
+// else initialise the table with a field                                                                                                                         
+local boot = "cold"; // init
+// Warm boot section
+if (("nv" in getroottable()) && ("count" in nv))                                                                                                                  
+{   // warm boot - nv present  
+// Make sure regulator is off at beginning of run
+// hardware.pin8.write(0x01 ^ nv.voltage_enable);
+    nv.count++;
+    nv.Status_BootPass = nv.count;
+    // Display the sleep count on our node                                                                                                                        
+    server.log(format("------- Warm Boot Pass #%d, WiFi %s, ID %s, Name: %s, Interval: %d -----", nv.count, nv.ssid, nv.impID, nv.xively, nv.gformin));
+    boot = "warm";                                                                                                                                                
+} else   // end warm boot section                                                                                                                                                           
+{   // cold boot section - create nv & init count                                                                                                                         
+    // Get Xively Name
+    nv <- 
+    {
+        pulses = [],
+        count = 1,
+        flowcnt = 0,
+        gformin = 10,
+        ssid = imp.getssid(),
+        impID = hardware.getimpeeid(),
+        xively = "No Name Yet",
+        board = "No Version Yet",
+        type = "No Type Yet",
+        MB_OnTime = -1,
+        MB_OffTime = -1, 
+        MB_TempSetPoint = -1, 
+        MB_QuartsPerDay = -1, 
+        MB_Cycles = -1,
+        MB_Temperature = -1,
+        MB_PlungerSize = -1,
+        MB_PinPosition = -1,
+        MB_MotorSize = -1,
+        MB_BatteryVoltage = -1,
+        MB_VersionNumber = -1,
+        Volts = -1,
+        Status_ImpVolts = -1,
+        Status_Signal_Strength = -1,
+        voltage_enable = 1, //1  enable high or 0 enable low
+        FlowCount = -1, 
+        Status_BootPass = 1,
+        Temperature = -1,
+        Status_vbat = -1,
+        Switch = -1,
+        Switch1 = -1
+    };
+   
+   // Send impID information to agent so it can connect it
+   // to Xively data feed
+    agent.send("impid", {ImpID = format("%s",hardware.getimpeeid()), BootCount = 1});
+    
+//    local i = 0;
+    // Display the sleep count on our node                                                                                                                        
+    server.log(format("------- Cold Boot Pass #%d, WiFi %s, ID %s, Name: %s, Interval: %d -----", nv.count, nv.ssid, nv.impID, nv.xively, nv.gformin));
+    boot = "cold";  
+
+    imp.enableblinkup(true);                                                                                                                                          
+    
+    local endtime = hardware.millis() + 10 * 1000; // set the end time by adding msecs                                                                                
+    while(boot == "cold" && (endtime - hardware.millis()) > 0) 
+    {                                                                                                      
+        if (hardware.millis()%1000 == 0) 
+        {                                                                                                                            
+            server.log("Blink up anyone?");                                                                                                                           
+        }                                                                                                                                                             
+        if ((endtime - hardware.millis()) < 0) 
+        { // time expired?                                                                                                     
+            break;                                                                                                                                                    
+        }                                                                                                                                                             
+    }               
+    
+    imp.sleep(1.0);
+        // Display the sleep count on our node                                                                                                                        
+    server.log(format("----!!!--- Cold Boot Pass #%d, WiFi %s, ID %s, Name: %s, Interval: %d -----", nv.count, nv.ssid, nv.impID, nv.xively, nv.gformin));
+
+}  // end cold boot section
+
+// Set up I/O pins
+// Modbus pins setup
+if(nv.type == "PUMP YES")
+{
+    // Pins 2, 7, 8, 9 have the same function on both HW
+    // Old Modbus configuration
+    // configure a pin group for UART TX/RX. RTS is used, but not CTS
+    hardware.uart1289.configure(9600, 8, PARITY_NONE, 1, NO_CTSRTS);
+    // Modbus control for send/receive
+    hardware.pin2.configure(DIGITAL_OUT);
+    // Pressure analog in
+    hardware.pin7.configure(ANALOG_IN);
+
+    if (nv.board == "No Version Yet") // old board
+    {
+         hardware.pin5.configure(DIGITAL_IN, flowmetercount());
+    } else if (nv.board == "version_021914") // new board
+    {
+// DEBUG        server.log("&&& Pump HW setup for "+nv.board);
+        hardware.pin1.configure(DIGITAL_IN, flowmetercount());
+        // Analog read on pin 7 for pressure                                                                                                                              
+        hardware.pin7.configure(ANALOG_IN); 
+        // Digital Write on pin 5 - control 3V regulator for sensors                                                                                                      
+        hardware.pin5.configure(DIGITAL_OUT);
+//        hardware.pin5.write(nv.voltage_enable); // turn it on
+    }
+  // Sensor only board pins setup
+} else if(nv.type == "PUMP NO")
+{ 
+    // Pins 1, 2, 7, and 9 are common
+    // Old Sensor Configuration
+    // hardware.pin1.configure(DIGITAL_IN_PULLUP);                                                                                                                    
+    hardware.pin1.configure(DIGITAL_IN_PULLUP);                                                                                                                       
+    // hardware.pin1.configure(DIGITAL_IN_PULLUP);                                                                                                                    
+    hardware.pin2.configure(DIGITAL_IN_PULLUP);
+    // Analog read on pin 7 for pressure                                                                                                                              
+    hardware.pin7.configure(ANALOG_IN); 
+    // Analog read on pin 9 for scaled battery voltage                                                                                                                             
+    hardware.pin9.configure(ANALOG_IN); 
+    
+    if(nv.board == "No Version Yet") // old board
+    {
+        // Old sensor configuration here
+        // Analog read on pin 5 for temp                                                                                                                                  
+        hardware.pin5.configure(ANALOG_IN);
+        // Digital Write on pin 8 - control 3V regulator for sensors                                                                                                      
+        hardware.pin8.configure(DIGITAL_OUT);
+        //    hardware.pin8.write(0x01 ^ nv.voltage_enable); // turn it off
+    } else if (nv.board == "version_021914") // new board
+    {
+// DEBUG       server.log("&&& Sensor HW setup for "+nv.board);
+        // New sensor configuration - switch pins 5 & 8
+        // Digital Write on pin 5 - control 3V regulator for sensors                                                                                                      
+        hardware.pin5.configure(DIGITAL_OUT);
+        //    hardware.pin5.write(0x01 ^ nv.voltage_enable); // turn it off
+        // Analog read on pin 8 for temp                                                                                                                                  
+        hardware.pin8.configure(ANALOG_IN);
+    }
+}   // else if(nv.type == "PUMP NO")
+
+local d = date(); 
+// Use first pass for initialzation
+// Second pass and on are normal running
+if(nv.Status_BootPass > 1)
+{
+    // Second pass and on
+    if(nv.type == "PUMP YES")
+    {
+// DEBUG
+server.log("--Pump Controller Modbus");
+        handleModbus();
+//        handleSensor(); // try reading sensor also
+ /*       imp.onidle(
+            function() 
+            {   // Make sure regulator off when idle
+        //        hardware.pin8.write(0x01 ^ nv.voltage_enable);
+                imp.wakeup(nv.gformin, 
+                    function(){server.sleepfor(10.0);
+                    });
+            });
+*/
+    } else if(nv.type == "PUMP NO")
+    {
+// DEBUG
+server.log("--Sensor Controller");
+        handleSensor();
+        // If this is sensor only, go into deep sleep for
+        // entire time
+//        imp.onidle(function() {server.sleepfor(nv.gformin)});
+        
+    }
+}   // if(nv.Status_BootPass > 1)
+
+// local d = date(); 
+//    imp.sleep(5);
+
+imp.onidle(
+    function() 
+    {   // Make sure regulator off when idle
+//        hardware.pin8.write(0x01 ^ nv.voltage_enable);
+        imp.wakeup(nv.gformin, 
+            function(){server.sleepfor(1.0);
+            });
+    });
+
+//        imp.onidle(function() {server.sleepfor(nv.gformin)});
+
+    
