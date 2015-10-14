@@ -1,0 +1,647 @@
+// Agent test code
+
+// Send SMS message by Twilio
+const TWILIO_ACCOUNT_SID = "AC2125ebaf03194d2f1cf1902b0c4592bb"
+const TWILIO_AUTH_TOKEN = "32f6d0007503cc300765cf6ef9e4e4d0"
+const TWILIO_FROM_NUMBER = "+18017011865" // your phone no goes here
+    // This phone number gets all the boot up text messages
+const TWILIO_TO_NUMBER = "+14055356726" // Mac destination phone no
+const TWILIO_TO_NUMBER = "+18473402434"  // Crump destination phone no
+// const TWILIO_TO_NUMBER = "+13174320753" // Randy destination phone no
+const ZULU_TIME_OFFSET = 19 // Eastern Time
+// globalvar <- "230789eb6e4936ee"; // test
+alarm_high <- -1.0; // high level alarm
+alarm_low <- -1.0; // low level alarm
+alarm_high_send <- 0; // decide to send high alarm
+alarm_low_send <- 0; // decide to send low alarm
+alarm_high_phones <- "";
+alarm_low_phones <- "";
+// qpd_setpoint <- 1.0; // quarts per day setpoint
+impid <- "no imp id yet"; // remember the imp ID
+impDescription <- "no imp description yet"; // remember description
+impDescriptionTable <- {}; // hold copy of Xively description metadata
+dataForXively <- {}; // hold copy of data for Xively
+afteraminute <- time() + 60;
+afteraminute1 <- time() + 60;
+bootpass <- 0; // remember bootpass
+
+function send_sms(number, message) 
+{
+    /*
+//    server.log("Sending sms:");
+    server.log("Sending SMS: "+message);
+    local twilio_url = format("https://api.twilio.com/2010-04-01/Accounts/%s/SMS/Messages.json", TWILIO_ACCOUNT_SID);
+    local auth = "Basic " + http.base64encode(TWILIO_ACCOUNT_SID+":"+TWILIO_AUTH_TOKEN);
+    local body = http.urlencode({From=TWILIO_FROM_NUMBER, To=number, Body=message});
+    local req = http.post(twilio_url, {Authorization=auth}, body);
+    local res = req.sendsync();
+    if(res.statuscode != 201) 
+    {   server.log("error sending message: "+res.body);
+    }
+    */
+}
+
+// 1. Name and create a Xively feed
+// 2. Get the activation code and run the curl script to activate
+// 3. Record the activation response, which includes the apikey and feed number
+// 5. In the table below, make the entry under the feed name created in Xively, and activation data returned
+// 6. When an Imp is ready to be activated for one of the Xively feeds, get the ImpID and put it in the appropriate slot
+
+imp_table <- 
+    {
+        // insert new imps below
+        // --This agent is for Chemical Pumps only!
+        InformaChemPump1 = {   
+//                            impid = "230789eb6e4936ee", 
+                            impid = "xx232ace4dead3dbee", 
+                            feed = 627874217, apikey = "w1buKrbzAknYTWiVGUsIsYY4C0asD1iF5KErllKbXR3VpEMi"  
+                           , sample_interval = 10, voltage_enable = 1
+//                            , board = "version_021914"
+            
+        },
+        // DC Modbus
+/*
+//         InformaChemPump2 = {   impid = "234f47eb6e4936ee", feed = 1348944517, apikey = "8aavsrXlDAfIevDIaH9KRNQndh2gcFR0ubABd47dHod0jiqX"  
+         InformaChemPump2 = {   impid = "2343b6eb6e4936ee", feed = 1348944517, apikey = "8aavsrXlDAfIevDIaH9KRNQndh2gcFR0ubABd47dHod0jiqX",  
+                                sample_interval = 10, voltage_enable = 1, 
+                                board = "version_021914"},
+        // AC Modbus
+         InformaChemPump3 = {   impid = "23423feb6e4936ee", feed = 1325563619, apikey = "yvIsehmvB1EGt4rAQrKObbDTFdtNIgExhvkXoi5h75R5xRZt"  
+                           , sample_interval = 10 },
+//        InformaChemPump1 = {   impid = "233c66eb6e4936ee", feed = 627874217, apikey = "w1buKrbzAknYTWiVGUsIsYY4C0asD1iF5KErllKbXR3VpEMi" 
+//                                 , sample_interval = 5, voltage_enable = 0  },
+        InformaBrineTank1 = {   impid = "xx2355cbeb6e4936ee", feed = 1432343757, apikey = "9ehXeWj4AFJ5TD2rKiRInZ664Xv6qiuiGtxciWGLseWIxJ3e", 
+                                sample_interval = 30, voltage_enable = 1,
+                                board = "version_021914"},
+        InformaCrudeTank1 = {   impid = "2307xx", feed = 2033339257, apikey = "fIiRLSNzPa6k4aLm6MahSd3G9NTqwwEsL3UWUql2EGrHKp9o"  },
+        InformaChemTank1 = {   impid = "xx232ace4dead3dbee", feed = 2105788416, apikey = "CbJjQsmbIKKhmvfwNXTXm2geO9lmsROQX3yB1YQKo37F6H1o"
+                                        sample_interval = 10, voltage_enable = 1, 
+                                        board = "version_021914"},
+        
+        InformaBrineTank2 = {   impid = "xx232417eb6e4936ee", feed = 670154089, apikey = "j8V2lVnlChthy46Ocv4epRgONhM9Iupu5cltAcfy9KzCk5es",
+                                sample_interval = 600, voltage_enable = 1,
+                                board = "version_021914"},
+        InformaCrudeTank2 = {   impid = "230789eb6e4936ee", feed = 865841957, apikey = "kql4mJhhNrGWqAimEQOTJkzOSqwXzN2k9YmIFXbBY5n82ZEn", 
+                                  sample_interval = 600, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank3 = {   impid = "236215eb6e4936ee", feed = 948909259, apikey = "ktZ3HqdtKrecGqiEweyXkPKgFlVPwbt4i1qQ89QVcI9P6T9A", 
+                                  sample_interval = 30, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank4 = {   impid = "xx232ace4dead3dbee", feed = 1749089637, apikey = "NVNPciOUYOjBORWV3OVG6CWf47gIchGCaKXZ9RfCKLMCddsQ", 
+                                  sample_interval = 600, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank5 = {   impid = "xx233f63eb6e4936ee", feed = 885224893, apikey = "ERhX4wu0gqtY9wF97n5k1GGeNbCbgbiPS2yBLF90MTfDSxw7", 
+                                  sample_interval = 600, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank6 = {   impid = "23637ceb6e4936ee", feed = 151976086, apikey = "rxR2dtQ8vgLexDG1aENmbVbNjqiaqnPYPaO36G81YpJI4KG8", 
+                                  sample_interval = 600, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank7 = {   impid = "23365feb6e4936ee", feed = 1004046424, apikey = "tMqHy8cDrhVw1sytc9UHVOLIKoSPFzi25kIg7QOM8vS4qbFq", 
+                                  sample_interval = 10, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank8 = {   impid = "234e394cead3dbee", feed = 2068549778, apikey = "QmDTRJaYyQfiuIYhUwjN4pOr78CVpTBbvb63FGLfL59nwTla", 
+                                  sample_interval = 10, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank9 = {   impid = "231545eb6e4936ee", feed = 196803437, apikey = "GkrQ2cI10qerrSARxOFOPC3gF9TD4cq92CzZwbb6JDkZH1b2", 
+                                  sample_interval = 10, voltage_enable = 1,
+                                  board = "version_021914"},
+        InformaCrudeTank10 = {   impid = "xx237d8beb6e4936ee", feed = 2067998933, apikey = "69kb7m0ANPooCYk3AVvioSXsLdXsNTpX9ORlrUE0dd824Le1", 
+                                  sample_interval = 600, voltage_enable = 1,
+                                  board = "version_021914"},
+                                  
+        InformaChemTank2 = {   impid = "23484feb6e4936ee", feed = 1995311635, apikey = "EY8ON0sBYDAVmocxjYIrWAxUggZzxcNrrO1R9NsvXyxthfu1"  }, 
+
+        DevonChemPump1 = {   impid = "233a1aeb6e4936ee", feed = 2008148184, apikey = "qEIbXubi2bD6DjQBNkyWEGv5fBq2kbCijIxvS3TyZ30dHhlT"  },
+        DevonChemPump2 = {   impid = "23560c4cead3dbee", feed = 802343163, apikey = "m1tKlcAgqxPY180HDQe4f82IJWA9LIvFI6dcyuhCvPePYUmb"  },
+        DevonChemTank1 = {   impid = "232417eb6e4936ee", feed = 547315046, apikey = "lNbRVoON2zpFe9LmMrBrS86Fni0Zm1W6h6x2ayumNhDYQUav",
+                                    sample_interval = 7200, voltage_enable = 1,
+                                    board = "version_021914"},
+        DevonChemTank2 = {   impid = "233f63eb6e4936ee", feed = 277137983, apikey = "OjD9OsvgG4NpsBCtoLYt67FLMBmzOnLbXTQFHoFlHu3l0R21",
+                                    sample_interval = 7200, voltage_enable = 1,
+                                    board = "version_021914"},
+        DevonBrineTank1 = {   impid = "232ace4dead3dbee", feed = 1761598148, apikey = "vlylRGnqifM3rpjcmdZRNk6ZC62Akl2j0KTAq7SCG4CQSR3G",
+                                    sample_interval = 7200, voltage_enable = 1, 
+                                    board = "version_021914"},
+        DevonBrineTank2 = {   impid = "237d8beb6e4936ee", feed = 33889245, apikey = "z7ltHrzMtiEfbYJI6hrAPEWQHVzh7VXPMwfnZH0eUizGA2vb",
+                                    sample_interval = 7200, voltage_enable = 1,
+                                    board = "version_021914"},
+
+        WellMarkDemoChemPump = {   impid = "230b96eb6e4936ee", feed = 1266829895, apikey = "MI5vJbWAsfChUMfJc5bzRmAHpx0vcRWesnzuzaR3Wq6SuU0c",
+                                        sample_interval = 10, voltage_enable = 1,
+                                        board = "version_021914" },
+        WellMarkDemoLevel = {   impid = "231f8deb6e4936ee", feed = 2012325919, apikey = "suAoU5udCBqBOD9BmM3RGTuCyVf6STHHHmOcssfEjPhL1tPV",
+                                        sample_interval = 600, voltage_enable = 1, 
+                                        board = "version_021914" },
+        WellMarkDemoSwitch = {   impid = "2307xx", feed = 848109198, apikey = "CLT3ehpzXv1RAwYQDsSzE8HmXQLcjspRBPcc3YQDgbwSKahT",  
+                                        sample_interval = 10, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockESWDBrineTank1 = {   impid = "23219ab236a7c9ee", feed = 1202181969, apikey = "Nv0hQ3JASKbDrxlT7nWMfedLampbxr3AAn3Q0dCD9RigyHqE",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockESWDCrudeTank1 = {   impid = "2336aaeb6e4936ee", feed = 1324602407, apikey = "vikLCWloSGX4XCcSi6l9gszLpy1xoZV5oZVdVBo95N7clyt9",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockESWDCrudeTank2 = {   impid = "235e9deb6e4936ee", feed = 873890869, apikey = "jev5nT1fXYY3hTwNxsvgP4LcmkitlsRGpLYoMikM5ZZnOygt",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockGSWDBrineTank1 = {   impid = "232fb6eb6e4936ee", feed = 1777539117, apikey = "C0Y79sGlQXbCy1bp4yL3FZ4IcjUtxQaZgsB2NVF9hbwXn5Bz",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockGSWDCrudeTank1 = {   impid = "2355cbeb6e4936ee", feed = 1022233769, apikey = "3puJJakgEe6VRiNQzKV6BLdE5VFCxSMdchAwJ85gzUfM3JX6",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },
+        AcockGSWDCrudeTank2 = {   impid = "2334c0eb6e4936ee", feed = 135448579, apikey = "BeNkAgyXOKUohMP5AZgjHiBiOOXGi5Wct025POSQW23atGEW",
+                                        sample_interval = 600, voltage_enable = 1,
+                                        board = "version_021914" },                                
+        EOGChemPump1 = {   impid = "237c523643fc42ee", feed = 2099714343, apikey = "mRJx9jKahQDHdIVDjd1GaISZOM4pc3XlV5QBPFUgQk7avbjE"  
+                           , sample_interval = 10},
+                           
+*/
+        EOGChemTank1 = {   impid = "xx237c523643fc42ee", feed = 2099714343, apikey = "mRJx9jKahQDHdIVDjd1GaISZOM4pc3XlV5QBPFUgQk7avbjE"  
+                           , sample_interval = 10}
+    }; // end imp_table
+
+agent_myimpid <- 0; // Imp ID
+agent_myapikey <- 0; // api key
+agent_myfeed <- 0;  // feed id
+agent_myxivelyname <- ""; // Xively feed name
+impid_lo <- 0x230789eb;
+impid_hi <- 0x6e4936ee;
+pump_or_tank <- 0; // Is asset a pump or tank object
+
+// This function gets the ImpID from the associated Imp
+// and then connects it to a specific Xively data feed
+device.on("impid", function(impid)
+{
+//    server.log("Agent received ImpID: "+impid.ImpID);
+    // need to put an x infront of the imp id
+    agent_myimpid = format("%s",impid.ImpID);
+    local agent_BootCount = impid.BootCount;
+//    agent_myimpid = impid.ImpID;
+//    server.log("Agent received ImpID: "+agent_myimpid);
+//    server.log("Imp hi "+impid_hi+"; Imp lo "+impid_lo);
+//    server.log(format("Imp hi: %x; Imp lo: %x", impid_hi, impid_lo));
+    
+    foreach ( name, key in imp_table)
+    {
+//        server.log("-value of key: "+key+"value of feed: "+key.feed);
+//         server.log(format("-name: %s: value of key: %s, feed: %d", name, key.impid, key.feed));
+        if (key.impid == agent_myimpid)
+        {
+            agent_myxivelyname = name;
+            agent_myapikey = key.apikey;
+            agent_myfeed = key.feed;
+//            server.log(format("---found name: %s", name));
+            if(agent_BootCount != 1) // only do this at beginning of run
+            {
+                if ("sample_interval" in key)
+                {
+//                    server.log("found sample_interval in key");
+                    device.send("interval", {interval = key.sample_interval});
+                }
+                if ("voltage_enable" in key)
+                {
+//                    server.log("found voltage_enable in key");
+                    device.send("voltage_enable", {voltage_enable = key.voltage_enable});
+                }
+                if("board" in key)
+                {
+//                    server.log("found board in key");
+                    device.send("board", {board = key.board});
+                }
+            } // if(agent_BootCount < 2) 
+//            if(agent_BootCount == 1) // only on first cold boot
+//            {
+                local pump = agent_myxivelyname.find("Pump");
+                pump_or_tank = pump; // save to global variable
+// DEBUG                server.log("** send Xively name "+agent_myxivelyname+" "+((pump==null)?"PUMP NO":"PUMP YES"));
+                device.send("XivelyName", {XivelyName = agent_myxivelyname, XivelyType = ((pump==null)?"PUMP NO":"PUMP YES")});
+//            }
+            break;
+        } // if (key.impid == agent_myimpid)
+    } // foreach ( key in imp_table)
+    
+//    server.log("Agent api key: "+agent_myapikey);
+}); // device.on("impid", function(impid)
+
+// Get new quarts per day set point from Xively channel
+// and send it to the Imp
+function fetchNewSetpoint() 
+{
+    if (! pump_or_tank) return ; // return if a tank
+    local getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-channel-value?feedID=",
+//        "https://wellmark-user.webscript.io/get-value?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "&xivelyChannelName=Set_QuartsPerDay");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    local getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+            if(response.statuscode == 200) // good response
+            {
+// DEBUG                server.log(format("--The response code: %d and QPD set point: ", 
+//                                response.statuscode)+ response.body);
+                device.send("newsetpoint", response.body.tofloat());
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and QPD set point: ", 
+                                response.statuscode)+ response.body);
+            }
+        });
+} // function fetchNewSetpoint() 
+
+// Get new high alarm value from Xively channel
+// and save it to alarm_high
+// Fetch phone numbers from channel tag 
+function fetchNewAlarmHigh() 
+{
+    local getValueURL, getValueRequest;
+    
+    // Get the alarm channel value
+    getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-channel-value?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "&xivelyChannelName=Set_AlarmHigh");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+//            server.log(format("--The response code: %d and high alarm: ", 
+//                            response.statuscode)+ response.body);
+    //        device.send("newalarmhigh", response.body.tofloat());
+            if(response.statuscode == 200) // good response
+            {   
+// DEBUG                server.log(format("--The response code: %d and high alarm: ", 
+//                            response.statuscode)+ response.body);
+                alarm_high = response.body.tofloat();
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and high alarm: ", 
+                            response.statuscode)+ response.body);
+            }
+        });
+        
+        // Get the alarm channel tags - phone numbers
+        getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-channel-info-test?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "&xivelyChannelName=Set_AlarmHigh");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+//            server.log(format("--The response code: %d and high alarm phones: ", 
+//                            response.statuscode)+ response.body);
+    //        device.send("newalarmhigh", response.body.tofloat());
+            if(response.statuscode == 200) // good response
+            {   
+// DEBUG                server.log(format("--The response code: %d and high alarm phones: ", 
+//                            response.statuscode)+ response.body);
+                alarm_high_phones = response.body;
+                local a = split( alarm_high_phones, "[ ]\",\n");
+                if(a.len()) // if len is 0 - no phone list
+                {
+                    foreach (ind, val in a)
+                    {
+// DEBUG                      server.log(format("### high alarm split: ind: %d val: %s", ind, val));
+                    }
+//  DEBUG                  server.log(format("--The response code: %d and split high alarm phones: ", response.statuscode)+ a[0]);
+                } else // no phone list
+                {
+                    server.log("### no high alarm phones!");
+                } 
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and high alarm phones: ", 
+                            response.statuscode)+ response.body);
+            }
+        });
+}   // function fetchNewAlarmHigh() 
+
+// Get new low alarm value from Xively channel
+// and save it to alarm_low
+// Fetch phone numbers from channel tag 
+function fetchNewAlarmLow() 
+{
+    local getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-channel-value?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "&xivelyChannelName=Set_AlarmLow");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    local getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+//            server.log(format("--The response code: %d and low alarm: ", 
+//                            response.statuscode)+ response.body);
+    //        device.send("newalarmlow", response.body.tofloat());
+            if(response.statuscode == 200) // good response
+            {   
+// DEBUG                server.log(format("--The response code: %d and low alarm: ", 
+//                            response.statuscode)+ response.body);
+                alarm_low = response.body.tofloat();
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and low alarm: ", 
+                            response.statuscode)+ response.body);
+            }
+        });
+        
+        // Get the alarm channel tags - phone numbers
+        getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-channel-info-test?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "&xivelyChannelName=Set_AlarmLow");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+//            server.log(format("--The response code: %d and low alarm phones: ", 
+//                        response.statuscode)+ response.body);
+    //        device.send("newalarmhigh", response.body.tofloat());
+            if(response.statuscode == 200) // good response
+            {   
+// DEBUG                server.log(format("--The response code: %d and low alarm phones: ", 
+//                        response.statuscode)+ response.body);
+                alarm_low_phones = response.body;
+                local a = split( alarm_low_phones, "[ ]\",\n");
+                if(a.len()) // if len is 0 - no phone list
+                {
+                    foreach (ind, val in a)
+                    {
+    //                    server.log(format("### low alarm split: ind: %d val: %s", ind, val));
+                    }
+//                    server.log(format("--The response code: %d and split low alarm phones: ", response.statuscode)+ a[0]);
+                    } else // no phone list
+                    {
+                        server.log("### No low level alarm phone!");
+                    }
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and low alarm phones: ", 
+                        response.statuscode)+ response.body);
+            }
+        });
+}   // function fetchNewAlarmLow()
+
+
+// Get info from Xively tags // impID stored in Xively feed tag
+function fetchTags() 
+{
+    local getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-feed-info-test?feedID=",
+//        "https://wellmark-user.webscript.io/get-value?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    local getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+//            server.log(format("--The response code: %d and tags: ", 
+//                            response.statuscode)+ response.body);
+            if(response.statuscode == 200) // good response
+            {
+// DEBUG                server.log(format("--The response code: %d and tags: ", 
+//                            response.statuscode)+ response.body);
+                impid = response.body;
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and tags: ", 
+                            response.statuscode)+ response.body);
+            }
+        });
+}   // function fetchTags() 
+
+/* Xively Metadata in the Description section
+Company, Informa
+Site, Braswell 23
+Location1, SI SI SW SE
+Location2, Section 10-23N-9E
+Location3, Grant County IN
+Permission1, Frank Braswell
+*/
+// Get info from Xively description metadata
+function fetchDescription() 
+{
+    local getValueURL = format(
+        "%s%d%s%s%s",
+        "https://wellmark.webscript.io/get-xively-meta-info-test?feedID=",
+        agent_myfeed,
+        "&apiKey=",
+        agent_myapikey,
+        "");
+//    server.log(format("--Get-Value URL: %s", getValueURL));
+    local getValueRequest = http.get(getValueURL);
+    getValueRequest.sendasync(
+        function(response)
+        {
+            if(response.statuscode == 200) // good response
+            {
+                impDescription = response.body;
+// DEBUG                server.log(format("--The response code: %d and description: ", 
+//                                response.statuscode)+ impDescription);
+//                local ind, key;
+                local a = split( impDescription, ",\n");
+                foreach( ind, key in a)
+                {
+                    // every other array entry are key, value pairs
+                    if(ind%2 == 1) { continue; }
+//                    server.log("==key: "+key+" val: "+a[ind+1]);
+                    impDescriptionTable[key] <- a[ind+1];
+//                    server.log(format("==key %s, val %s", key, a[ind+1]));
+                }
+//                server.log(format("^^Site: %s", impDescriptionTable["Site"]));
+            } else // bad response
+            {
+                server.log(format("--The response code: %d and description: ", 
+                                response.statuscode)+ impDescription);
+            }
+        });
+        // The function hasn't had time to finish when here!
+//        while( !("Site" in impDescriptionTable) ){} // wait for table entry
+//        server.log(format("^^After Loop Site: %s", impDescriptionTable["Site"]));
+}   // function fetchDescription()
+
+// Send Xively csv data package from Imp
+device.on("csv", 
+    function(csv) 
+    {
+        if (csv.len() > 0)
+        {
+            server.log("Sending Xively " + agent_myxivelyname + " this data: " + csv);    
+    
+            http.put(format("%s%d%s","https://api.xively.com/v2/feeds/", agent_myfeed, ".csv"), 
+            {
+                "X-Api-Key": agent_myapikey,
+                "Authorization": "Basic ZmJyYXN3ZWxsOm1lcnJpdHQxODY1"
+            }, csv).sendasync(function(response) 
+            {
+    //            server.log("xively response: "+response.statuscode);
+                 if(time() > afteraminute1)   
+                {
+                    fetchNewSetpoint();
+                    afteraminute1 = time() + 60; // add another minute
+                }
+            });
+        }
+        else 
+        {
+            server.log("Nothing to send to Xively.");    
+            fetchNewSetpoint();
+        }
+        
+        // only do this once a minute
+        if(time() > afteraminute)
+        {
+            // Get new low alarm value from Xively channel
+            // and save it to alarm_low
+            fetchNewAlarmHigh();
+            // Get new low alarm value from Xively channel
+            // and save it to alarm_low
+            fetchNewAlarmLow();
+            fetchTags();
+            fetchDescription();
+            afteraminute = time() + 60; // add another minute
+        }
+        
+        // break down csv for detailed register information
+        // The array a is split by "," and "\n" so each csv
+        // pair are in adjacent array locations
+        // key a[i] and value a[a+1]
+        local a = split(csv, ",\n");
+    //    server.log("after split: "+a);
+//        local i = 0;
+        foreach( ind, val in a)
+        {
+            if(ind%2 == 1) { continue; }
+//            server.log(format("--pair %s: %s; alarm high: %5.2f; low: %5.2f", a[ind], a[ind+1], alarm_high, alarm_low));
+            dataForXively[val] <- a[ind+1]; // store agent copy of data
+            if (val == "Status_BootPass")
+            {
+//                server.log(format("~~~pair %s: %s; alarm high: %5.2f; low: %5.2f", val, a[ind+1], alarm_high, alarm_low));
+//                server.log("Imp ID: "+agent_myimpid+" Xively Name: "+agent_myxivelyname);
+//                server.log("Xively Feed: "+agent_myfeed+" api Key: "+agent_myapikey);
+                local datetime = date();
+                bootpass = a[ind+1].tofloat(); // remember bootpass
+                if(a[ind+1].tofloat() <= 2.0) // catch second pass
+                {
+                    send_sms(TWILIO_TO_NUMBER, format("Starting Up Imp Cold Boot! %02d:%02d - %s", 
+                                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min, 
+                                                    agent_myxivelyname));
+                    // "13.5 ft Hi Level Alarm Brine Tank 1 (or 2). Devon Reed No.  1-21H WellMark Monitoring Services
+                    // Hi Lev DevinBrineTank1 Reed No. 1-21H WellMark Monitoring Services
+                    
+ //                   send_sms(TWILIO_TO_NUMBER, format("Hi Lev %s Reed No. 1-21H %d:%d - WellMark Monitoring Services", agent_myxivelyname, datetime.hour-5, datetime.min));
+                } else // boot pass 2 and up
+                {
+    //                send_sms(TWILIO_TO_NUMBER, format("Starting Up Imp Warm Boot! %d:%d - %s", datetime.hour-5, datetime.min, agent_myxivelyname));
+                }
+            }
+//            i++; // increment array index
+        }   // foreach( ind, val in a)
+        // not ready here!
+        if ("Site" in impDescriptionTable)
+        {
+            local datetime = date();
+//            server.log(format("^^After Loop Site: %s", impDescriptionTable.Site));
+            // check for high level alarm
+            if(alarm_high.tofloat() < dataForXively.Volts.tofloat())
+            {
+//                alarm_high_send++;
+                if(bootpass > 2)
+                {   alarm_high_send++;
+                }
+                if( alarm_high_send == 1) // determine when to send message
+                {
+//                    server.log(format("$$$ Hi Lev %s %s %02d:%02d - WellMark Monitoring Service", 
+//                                    agent_myxivelyname, impDescriptionTable.Site, 
+//                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min));
+//                send_sms(TWILIO_TO_NUMBER, format("Hi Lev %s Reed No. 1-21H %d:%d - WellMark Monitoring Service", agent_myxivelyname, datetime.hour-5, datetime.min));
+                    local a = split( alarm_high_phones, "[ ]\",\n");
+                    if(a.len()) // if len is 0 - no phone list
+                    {
+                        foreach (ind, val in a)
+                        {
+//                            server.log(format("$$$ High Lev %s %s %d:%d phone: %s - WellMark Monitoring Services 800-962-0839", 
+//                                                    agent_myxivelyname, impDescriptionTable.Site, 
+//                                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min, val));
+                            send_sms(val, format("High Level %s %s %02d:%02d - WellMark Monitoring Services 800-962-0839", 
+                                                    agent_myxivelyname, impDescriptionTable.Site, 
+                                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min));
+//                          server.log(format("### High alarm split: ind: %d val: %s", ind, val));
+                        }
+//                    server.log(format("--The response code: %d and split low alarm phones: ", response.statuscode)+ a[0]);
+                    } else
+                    {
+                        server.log("### No High level alarm phone!");
+//                      send_sms(TWILIO_TO_NUMBER, format("Hi Lev %s Reed No. 1-21H %d:%d - WellMark Monitoring Service", agent_myxivelyname, datetime.hour-5, datetime.min));
+                    }
+                }
+            } else
+            {
+                alarm_high_send = 0; // reset send if no alarm
+            }
+            // check for low level alarm
+            if(alarm_low.tofloat() > dataForXively.Volts.tofloat())
+            {
+                if(bootpass > 2)
+                {   alarm_low_send++;
+                }
+                if( alarm_low_send == 1) // determine when to send message
+                {
+//                    server.log(format("$$$ Low Lev %s %s %02d:%02d - WellMark Monitoring Service", 
+//                                    agent_myxivelyname, impDescriptionTable.Site, 
+//                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min));
+                    local a = split( alarm_low_phones, "[ ]\",\n");
+                    if(a.len()) // if len is 0 - no phone list
+                    {
+                        foreach (ind, val in a)
+                        {
+//                            server.log(format("$$$ Low Lev %s %s %02d:%02d phone: %s - WellMark Monitoring Services 800-962-0839", 
+//                                                    agent_myxivelyname, impDescriptionTable.Site, 
+//                                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min, val));
+                            send_sms(val, format("Low Level %s %s %02d:%02d - WellMark Monitoring Services 800-962-0839", 
+                                                    agent_myxivelyname, impDescriptionTable.Site, 
+                                                    (datetime.hour+ZULU_TIME_OFFSET)%24, datetime.min));
+//                          server.log(format("### low alarm split: ind: %d val: %s", ind, val));
+                        }
+//                    server.log(format("--The response code: %d and split low alarm phones: ", response.statuscode)+ a[0]);
+                    } else
+                    {
+                        server.log("### No low level alarm phone!");
+//                      send_sms(TWILIO_TO_NUMBER, format("Hi Lev %s Reed No. 1-21H %d:%d - WellMark Monitoring Service", agent_myxivelyname, datetime.hour-5, datetime.min));
+                    }
+                }
+            } else
+            {
+                alarm_low_send = 0; // reset send if no alarm
+            }
+        } else  // if ("Site" in impDescriptionTable)
+        {
+            server.log("^^impDescriptionTable.Site not ready yet!");
+        }
+}); // device.on("csv", function(csv) 
