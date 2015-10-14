@@ -1,0 +1,1016 @@
+// Agent code for Data Test
+server.log("---AGENT START---");
+const XIVELY_URL = "https://api.xively.com/v2/feeds/";  // Xively base URL
+const XIVELY_Account_Authorization = "Basic a25pZ2h0aGF3azprbmlnM3QzOHdr"; // WellMark knighthawk auth
+const PUMP_MODE = 1;
+const TRANSDUCER_MODE = 0; 
+
+// myDevID <- "no Imp dev id yet";
+IMP_DEV_ID <- "no Imp dev id yet";
+XIVELY_FEED <- 0;   // Xively feed # will go here
+XIVELY_FEED_NAME <- "xively feed name"; // Xively Feed Name
+XIVELY_API_ENDPOINT <- "no Xively endpoint yet";
+// agent_myapikey <- "no Xively feed key yet";
+XIVELY_API_KEY <- "no Xively feed key yet";
+
+const MB_ONTIME = "MB_OnTime";
+const MB_OFFTIME = "MB_OffTime";
+const MB_TEMPSETPOINT = "MB_TempSetPoint";
+const MB_QUARTSPERDAY = "MB_QuartsPerDay";
+const MB_CYCLES = "MB_Cycles";
+const MB_TEMPERATURE = "MB_Temperature";
+const MB_PLUNGERSIZE = "MB_PlungerSize";
+const MB_PINPOSITION = "MB_PinPosition";
+const MB_MOTORSIZE = "MB_MotorSize";
+const MB_BATTERYVOLTAGE = "MB_BatteryVoltage";
+const MB_VERSIONNUMBER = "MB_VersionNumber";
+
+const TM_ONSEC = "TM_onsec";
+const TM_ONMIN = "TM_onmin";
+const TM_ONHR = "TM_onhr";
+const TM_OFFSEC = "TM_offsec";
+const TM_OFFMIN = "TM_offmin";
+const TM_OFFHR = "TM_offhr";
+
+TimeMark <- 
+{
+    // Time Mark Jan 27, 2014 release
+    MB_OnTime = -1,
+    MB_OffTime = -1,
+    MB_TempSetPoint = -1,
+    MB_QuartsPerDay = -1,
+    MB_Cycles = -1,
+    MB_Temperature = -1,
+    MB_PlungerSize = -1,
+    MB_PinPosition = -1,
+    MB_MotorSize = -1,
+    MB_BatteryVoltage = -1,
+    MB_VersionNumber = -1,
+    
+    // Time Mark Fall 2014 release
+    TM_onsec = -1,
+    TM_onmin = -1,
+    TM_onhr = -1,
+    TM_offsec = -1,
+    TM_offmin = -1,
+    TM_offhr = -1,
+    TM_pumpmode = -1,
+    TM_tempsetpoint = -1,
+    TM_auxmode = -1,
+    TM_auxonsec = -1,
+    TM_auxonmin = -1,
+    TM_auxonhr = -1,
+    TM_auxoffsec = -1,
+    TM_auxoffmin = -1,
+    TX_auxoffhr = -1,
+    TM_qtperday = -1,
+    TM_cyclespumpmode = -1,
+    TM_currenttemp = -1,
+    TM_plungersize = -1,
+    TM_pinpos = -1,
+    TM_motorsize = -1,
+    TM_gearratio = -1,
+    TM_tahpulse = -1,
+    TM_voltage = -1,
+    TM_version = -1,
+    TM_pwm = -1,
+    TM_motortachT3 = -1,
+    TM_avgT3 = -1,
+    TM_calctach = -1,
+    TM_RTChr = -1,
+    TM_RTCminsec = -1,
+    TM_RTCmo = -1,
+    TM_RTCdayyr = -1,
+    TM_ana1 = -1,
+    TM_ana2 = -1
+}
+
+const PT500_MODEL = "PT500_model";
+const PT500_PRESSURE_H2O = "PT500_pressure_h2o";
+const PT500_TEMPC = "PT500_tempC";
+const PT500_CALC = "PT500_calc";
+const PT500_BATV = "PT500_batv";
+
+PT500 <- 
+{
+    PT500_model = -1,
+    PT500_pressure_h2o = -1,
+    PT500_tempC = -1,
+    PT500_calc = -1,
+    PT500_batv = -1
+}
+
+const MPX_MODEL = "MPX_model";
+const MPX_TOPDIST = "MPX_topdist";
+const MPX_BOTDIST = "MPX_botdist";
+const MPX_TEMPC = "MPX_tempC"
+const MPX_TOPCALC = "MPX_topcalc";
+const MPX_BOTCALC = "MPX_botcalc";
+
+MPX <-
+{
+    MPX_model = -1,
+    MPX_topdist = -1,
+    MPX_botdist = -1,
+    MPX_tempC = -1,
+    MPX_topcalc = -1,
+    MPX_botcalc = -1
+}
+
+const ICHEM_ = "ichem";
+
+const ICHEM_MONTH = "ICHEM_month";
+const ICHEM_DAY = "ICHEM_day";
+const ICHEM_YEAR = "ICHEM_year";
+const ICHEM_HOUR = "ICHEM_hour";
+const ICHEM_MIN = "ICHEM_min";
+const ICHEM_SEC = "ICHEM_sec";
+
+ICHEM <-
+{
+    ICHEM_month = -1, // 40002 int
+    ICHEM_day = -1, // 40003 int
+    ICHEM_year = -1, // 40004 int
+    ICHEM_hour = -1, // 40005 int
+    ICHEM_min = -1, // 40006 int
+    ICHEM_sec = -1, // 40007 int
+    
+    ICHEM_daily_volume = -1, // 40100 float
+    ICHEM_daily_cycles = -1, // 40102 float
+    ICHEM_injection_rate = -1, // 40104 float
+    ICHEM_accum_cycle_vol = -1, // 40106 float
+    ICHEM_accum_daily_vol = -1, // 40108 float
+    ICHEM_curr_tank_lev = -1, // 40110 float
+    ICHEM_fm_k_factor = -1, // 40112 float
+    ICHEM_yesterday_volume = -1, // 40114 float
+    ICHEM_week_volume = -1, // 40116 float
+    ICHEM_month_volume = -1, // 40118 float
+    ICHEM_year_volume = -1, // 40120 float
+    ICHEM_forever_volume = -1, // 40122 float
+}
+
+// Defaults
+IMP_SAMPLE_PER <- 10; // Default 10 sec sample period
+IMP_XMIT_PER <- 60; // Default 60 sec transmit period
+// IMP_MODE <- TRANSDUCER_MODE; // Mode 0 = transducer only; Mode 1 = Pump
+IMP_MODE <- PUMP_MODE; // Mode 0 = transducer only; Mode 1 = Pump
+
+// Default trigger points
+// If a trigger is exceeded, the Imp reports the event immediately
+// Immediate means the Imp reports on the next sample period, not waiting for
+// the scheduled xmit time.
+// More data channels will be added as needed
+IMP_ANALOG1_THRESHOLD <- -1; // trigger threshold
+IMP_ANALOG1_RANGE <- 0.1; // hysteresis range - 1/2 above, 1/2 below threshsold
+
+// IMP_DEV_ID  = strip(xivelyInfo[0]);
+const X_IMP_DEV_ID = 0;
+const X_XIVELY_FEED_NAME = 1;
+const X_XIVELY_FEED = 2;
+const X_XIVELY_API_KEY = 3;
+const X_IMP_SAMPLE_PER = 4;
+const X_IMP_XMIT_PER = 5;
+const X_IMP_MODE = 6;
+const X_IMP_ANALOG1_THRESHOLD = 7;
+const X_IMP_ANALOG1_RANGE = 8;
+
+// Imp Wake Codes
+
+impWakeCodes <-
+[
+//    Code    Description
+     "The power was turned on", // 0
+     "A software reset took place", // 1
+     "An event timer fired", // 2
+    "Pulse detected on Wakeup Pin", // 3
+    "New Squirrel code downloaded", // 4
+    "Squirrel runtime error", // 5
+    "impOS update", // 6
+    "A snooze-and-retry event", // 7
+        // imp003 only
+    "Hardware reset", // 8
+];
+
+/*
+TimeMark <- 
+{
+    MB_ONTIME = -1,
+    MB_OFFTIME = -1,
+    MB_TEMPSETPOINT = -1,
+    MB_QUARTSPERDAY = -1,
+    MB_CYCLES = -1,
+    MB_TEMPERATURE = -1,
+    MB_PLUNGERSIZE = -1,
+    MB_PINPOSITION = -1,
+    MB_MOTORSIZE = -1,
+    MB_BATTERYVOLTAGE = -1,
+    MB_VERSIONNUMBER = -1
+}
+
+const MB_ONTIME = "MB_OnTime";
+const MB_OFFTIME = "MB_OffTime";
+const MB_TEMPSETPOINT = "MB_TempSetPoint";
+const MB_QUARTSPERDAY = "MB_QuartsPerDay";
+const MB_CYCLES = "MB_Cycles";
+const MB_TEMPERATURE = "MB_Temperature";
+const MB_PLUNGERSIZE = "MB_PlungerSize";
+const MB_PINPOSITION = "MB_PinPosition";
+const MB_MOTORSIZE = "MB_MotorSize";
+const MB_BATTERYVOLTAGE = "MB_BatteryVoltage";
+const MB_VERSIONNUMBER = "MB_VersionNumber";
+*/
+
+// extracct 16 bit int register from 
+// modbus array
+function MB_toint16(register, offset, a)
+{
+  // the first three locations of the modbus
+  // array are used for comm data
+  // a[0] = MB address
+  // a[1] = MB command
+  // a[2] = MB length of data
+  // The registers start at location 3
+  // The register at loc 3 may be offset from 0
+  // in the block of data
+    // The array is made up of pairs, representing
+    // 8 bit values from the MB read
+    // Shift the first upper byte value by 8 and OR it with
+    // the adjacent lower byte to get the
+    // 16 bit int
+    // two regs per word offset by 3 locations
+    // and back by 2 because index origin is 1, not 0
+    local aloc = ((register - offset) * 2) + 3 - 2; 
+    if(aloc+1 > (a.len() - 1))
+    {
+        return null;
+    }
+  return (a[aloc] << 8) | a[aloc + 1];
+} // function MB_toint16(register, offset, a)
+
+function MB_toint32(register, offset, a)
+{
+    // MB_toint32 is similar to MB_toint16, except
+    // we put together 4 registers
+    local aloc = ((register - offset) * 2) + 3 - 2; 
+    if(aloc+3 > (a.len() - 1))
+    {
+        return null;
+    }
+    return (a[aloc] << 24) | (a[aloc + 1] << 16) 
+            | (a[aloc + 2] << 8) | a[aloc + 3];
+} // function MB_toint32(register, offset, a)
+
+function MB_tofloat32(register, offset, a)
+{
+    // MB_tofloat32 is similar to MB_toint32, except
+    // we put together 4 registers and cast to float
+    local aloc = ((register - offset) * 2) + 3 - 2;
+    if (aloc+3 > (a.len() - 1))
+    {
+        return null;
+    }
+    return casti2f((a[aloc] << 24) | (a[aloc + 1] << 16) 
+            | (a[aloc + 2] << 8) | a[aloc + 3]);
+} // function MB_tofloat32(register, offset, a)
+
+const TIME_MARK_JAN14 = "time_mark_jan14";
+device.on(TIME_MARK_JAN14, function(a)
+{
+//    foreach (key, val in data)
+//        {
+//            server.log("Time Mark key: "+key+" val: "+val)
+//        }
+
+    // version number for Jan 14, 2014 = 140127
+    TimeMark.MB_VersionNumber <- MB_toint32(14, 0, a);
+    if(TimeMark.MB_VersionNumber == 140127)
+    {
+        // This is older version
+        server.log("--* Found version 140127!");
+    
+        TimeMark.MB_OnTime <- MB_toint16(1, 0, a);
+        TimeMark.MB_OffTime <- MB_toint16(2, 0, a);
+        TimeMark.MB_TempSetPoint <- MB_toint16(3, 0, a);
+        TimeMark.MB_QuartsPerDay <- MB_tofloat32(4, 0, a);
+        TimeMark.MB_Cycles <- MB_toint32(6, 0, a);
+        TimeMark.MB_Temperature <- MB_toint16(8, 0, a);
+        TimeMark.MB_PlungerSize <- MB_toint16(9, 0, a);
+        TimeMark.MB_PinPosition <- MB_toint16(10, 0, a);
+        TimeMark.MB_MotorSize <- MB_toint16(11, 0, a);
+        TimeMark.MB_BatteryVoltage <- MB_tofloat32(12, 0, a);
+    } else
+    {
+/*            foreach (key, val in a)
+        {
+            server.log("Time Mark New key: "+key+" val: "+val)
+        }
+*/        
+            // Time Mark Fall 2014 release
+        const TMoffset = -1;
+        TimeMark.TM_onsec <- MB_toint16(0, TMoffset, a);
+        TimeMark.TM_onmin <- MB_toint16(1, TMoffset, a);
+        TimeMark.TM_onhr <- MB_toint16(2, TMoffset, a);
+        TimeMark.TM_offsec <- MB_toint16(3, TMoffset, a);
+        TimeMark.TM_offmin <- MB_toint16(4, TMoffset, a);
+        TimeMark.TM_offhr <- MB_toint16(5, TMoffset, a);
+        TimeMark.TM_pumpmode <- MB_toint16(6, TMoffset, a);
+        TimeMark.TM_tempsetpoint <- MB_toint16(7, TMoffset, a);
+        TimeMark.TM_auxmod <- MB_toint16(8, TMoffset, a);
+        TimeMark.TM_auxonsec  <- MB_toint16(9, TMoffset, a);
+        TimeMark.TM_auxonmin <- MB_toint16(10, TMoffset, a);
+        TimeMark.TM_auxonhr <- MB_toint16(11, TMoffset, a);
+        TimeMark.TM_auxoffsec <- MB_toint16(12, TMoffset, a);
+        TimeMark.TM_auxoffmin <- MB_toint16(13, TMoffset, a);
+        TimeMark.TX_auxoffhr <- MB_toint16(14, TMoffset, a);
+        
+        TimeMark.TM_qtperday <- MB_tofloat32(15, TMoffset, a);
+        TimeMark.TM_cyclespumpmode <- MB_toint32(17, TMoffset, a);
+        
+        TimeMark.TM_currenttemp <- MB_toint16(19, TMoffset, a);
+        TimeMark.TM_plungersize <- MB_toint16(20, TMoffset, a);
+        TimeMark.TM_pinpos <- MB_toint16(21, TMoffset, a);
+        TimeMark.TM_motorsize <- MB_toint16(22, TMoffset, a);
+        
+        TimeMark.TM_gearratio <- MB_tofloat32(23, TMoffset, a);
+        TimeMark.TM_tahpulse <- MB_toint16(25, TMoffset, a);
+        
+        TimeMark.TM_voltage <- MB_tofloat32(26, TMoffset, a);
+        TimeMark.TM_version <- MB_toint32(28, TMoffset, a);
+        
+        TimeMark.TM_pwm <- MB_toint16(30, TMoffset, a);
+        TimeMark.TM_motortachT3 <- MB_toint16(31, TMoffset, a);
+        TimeMark.TM_avgT3 <- MB_toint16(32, TMoffset, a);
+        TimeMark.TM_calctach <- MB_toint16(33, TMoffset, a);
+        TimeMark.TM_RTChr <- MB_toint16(34, TMoffset, a);
+        TimeMark.TM_RTCminsec <- MB_toint16(35, TMoffset, a);
+        TimeMark.TM_RTCmo <- MB_toint16(36, TMoffset, a);
+        TimeMark.TM_RTCdayyr <- MB_toint16(37, TMoffset, a);
+        TimeMark.TM_ana1 <- MB_toint16(38, TMoffset, a);
+        TimeMark.TM_ana <- MB_toint16(39, TMoffset, a);
+    }
+        
+} // end of function(data)
+); // end device.on(TIME_MARK_JAN14, function(data)
+
+const MB_PT500_HREG = "MB_PT500_HREG";
+device.on(MB_PT500_HREG, function(data)
+{
+    foreach (key, val in data)
+        {
+            server.log("APG PT-500 hreg key: "+key+" val: "+val)
+        }
+} // end of function(data)
+); // end device.on(MB_PT500_HREG, function(data)
+
+const MB_PT500_IREG = "MB_PT500_IREG";
+device.on(MB_PT500_IREG, function(data)
+{
+//    foreach (key, val in data)
+//        {
+//            server.log("APG PT-500 ireg key: "+key+" val: "+val)
+//        }
+    // Decode registers
+    PT500.PT500_model <- MB_toint16(299, 298, data);
+    PT500.PT500_pressure_h2o <- MB_toint16(300, 298, data);
+    PT500.PT500_tempC <- MB_toint16(302, 298, data);
+    PT500.PT500_calc <- MB_toint16(304, 298, data);
+    PT500.PT500_batv <- MB_toint16(308, 298, data);
+//    foreach (key, val in PT500)
+//    {
+//        server.log("APG PT-500: "+key+": "+val);
+//    }
+    
+} // end of function(data)
+); // end device.on(MB_PT500_IREG, function(data)
+
+const MB_MPX_IREG = "MB_MPX_IREG";
+device.on(MB_MPX_IREG, function(data)
+{
+//    foreach (key, val in data)
+//        {
+//            server.log("APG MPX ireg key: "+key+" val: "+val)
+//        }
+    // Decode registers
+    MPX.MPX_model <- MB_toint16(299, 298, data);
+    MPX.MPX_topdist <- MB_toint16(300, 298, data);
+    MPX.MPX_botdist <- MB_toint16(301, 298, data);
+    MPX.MPX_tempC <- MB_toint16(302, 298, data);
+    MPX.MPX_topcalc <- MB_toint32(303, 298, data);
+    MPX.MPX_botcalc <- MB_toint32(305, 298, data);
+//    foreach (key, val in PT500)
+//    {
+//        server.log("APG MPX: "+key+": "+val);
+//    }
+} // end of function(data)
+); // end device.on(MB_MPX_IREG, function(data)
+
+const ICHEM_HREG = "iChem_hreg";
+device.on(ICHEM_HREG, function(data)
+{
+    server.log("-- agent ICHEM data array length: "+data.len());
+    ICHEM.ICHEM_month <- (data[7] << 8) | data[8]; // 40002 int
+    ICHEM.ICHEM_day <- (data[9] << 8) | data[10]; // 40003 int
+    ICHEM.ICHEM_year <- (data[11] << 8) | data[12]; // 40004 int
+    ICHEM.ICHEM_hour <- (data[13] << 8) | data[14]; // 40005 int
+    ICHEM.ICHEM_min<- (data[15] << 8) | data[16]; // 40006 int
+    ICHEM.ICHEM_sec <- (data[17] << 8) | data[18]; // 40007 int
+    foreach (key, val in ICHEM)
+    {
+        server.log("agent ICHEM: "+key+": "+val);
+    }
+    
+/*    
+    ICHEM.ICHEM_daily_volume <- (data[19] << 8) | data[20]; // 40100 float
+    ICHEM.ICHEM_daily_cycles <- (data[3] << 8) | data[4]; // 40102 float
+    ICHEM.ICHEM_injection_rate <- (data[3] << 8) | data[4]; // 40104 float
+    ICHEM.ICHEM_accum_cycle_vol <- (data[3] << 8) | data[4]; // 40106 float
+    ICHEM.ICHEM_accum_daily_vol <- (data[3] << 8) | data[4]; // 40108 float
+    ICHEM.ICHEM_curr_tank_lev <- (data[3] << 8) | data[4]; // 40110 float
+    ICHEM.ICHEM_fm_k_factor <- (data[3] << 8) | data[4]; // 40112 float
+    ICHEM.ICHEM_yesterday_volume <- (data[3] << 8) | data[4]; // 40114 float
+    ICHEM.ICHEM_week_volume <- (data[3] << 8) | data[4]; // 40116 float
+    ICHEM.ICHEM_month_volume <- (data[3] << 8) | data[4]; // 40118 float
+    ICHEM.ICHEM_year_volume <- (data[3] << 8) | data[4]; // 40120 float
+    ICHEM.ICHEM_forever_volume <- (data[3] << 8) | data[4]; // 40122 float
+*/    
+} // end of function(data)
+); // end device.on(ICHEM_HREG, function(data)
+
+// Get meta data from the device, which includes the
+// impID and ssid information
+
+//  meta key: ssid val: FrankBraswellsPhone5s
+//  meta key: devid val: 235c87eb6e4936ee
+device.on("metadata", function(data)
+    {
+
+        foreach (key, val in data)
+        {
+            server.log("meta key: "+key+" val: "+val);
+        }
+
+        // stash the imp ID for later use
+        IMP_DEV_ID <- data.devid; 
+        IMP_SSID <- data.ssid;
+        getXivelyFeedsTable();
+    }
+);  // device.on("metadata", function(data)
+
+// Get table data from device and form a csv file
+device.on("tabledata",function(data)
+    {
+    //  First make sure that IMP_DEV_ID is defined
+    //  If not, get the information from the Imp
+    // This situation can happen during development when
+    // the agent code is updated, but the device code
+    // doesn't change    
+    if(IMP_DEV_ID == "no Imp dev id yet")
+    {
+        server.log("Don't have Imp dev id");
+        local obj = 0;
+        // See if I can catch it here - Imp must not be sleeping
+//        device.send("getImpInfo", obj);  // Request Information
+        device.onconnect(function() 
+        {
+            device.send("getImpInfo", obj);  // Request Information
+            server.log("Request Imp dev id"); 
+        });
+        return;
+    } else
+    {
+        // Since device.onconnect stays active and executes with
+        // each connect, it is necessary to reset it at disconnect time.
+        // At disconnect time, turn off the device.onconnect procedure
+        // so the device.send("getImpInfo", obj) doesn't keep running
+        device.ondisconnect(function()
+        {
+            device.onconnect(function(){});
+        });
+    }    
+        
+        local makecsv = ""; // used to build csv file for Xively
+        local report_MB = ""; // MB for log report decoded by device
+        local report_MB_agent = ""; // MB info decoded by agent
+        local report_PT500_agent = ""; // PT500 info decoded by agent
+        local report_MPX_agent = ""; // MPX info decoded by agent
+        local report_ICHEM_agent = ""; // ICHEM info decoded by agent
+        local report_TM_agent = ""; // TM info decoded by agent
+        local report_pvoltest = ""; // for log report
+        local report_data = "";  // for log report
+        local keys = [ ];
+        local bootcount = data.bootcount;
+        foreach (key, val in data)
+        {
+            keys.push(key);
+        }
+        // sorting the keys makes the list easier to read
+        keys.sort();
+//        server.log("++++++++keys length: "+keys.len());
+//        foreach (key, val in data)
+        foreach (key in keys)
+        {
+//            server.log("+++++ key: "+key);
+            local val = data[key];
+            // Catching keys longer than 9!!!!! They are the pvoltest time string
+            if(key.len() > 9 && (key.find("MB") == null 
+                            && key.find("PT500") == null
+                            && key.find("MPX") == null 
+                            && key.find("ICHEM") == null
+                            && key.find("TM") == null)) // time stamp string is longer than the other keys
+            {
+                // Catch pvoltest data here
+                    // build time string
+                local v = key.tointeger() - data["time"];
+                local t = date(key.tointeger());
+                local tformat = format("%4d-%02d-%02dT%02d:%02d:%02d", 
+                                        t.year, t.month + 1, t.day, t.hour, t.min, t.sec);
+// debug               server.log("table key: "+key+", val: "+val+" - time diff: "+v+" time: "+tformat);
+                    // build csv entry with name of chan, time, data value
+                makecsv += "pvolttest, "+tformat+", "+val+"\n";
+                    // list of pvoltest info
+                report_pvoltest += "pvolttest, "+tformat+", "+val+"\n";
+            } else
+            {
+                // Catch MB and other data here
+//                server.log("table key: "+key+", val: "+val);
+                    // build csv entry with name of chan, data value
+                makecsv += key+", "+val+"\n";
+                
+                
+                // Locate Modbus data
+                if (key.find("MB") != null ||
+                    key.find("PT500") != null ||
+                    key.find("MPX") != null ||
+                    key.find("ICHEM") != null ||
+                    key.find("TM") != null)
+                {   
+                    
+                    // list of MB info
+                    // put MB info in report_MB string
+                    report_MB += key+", "+val+"\n";
+                    
+                    if(key.find("MB") != null)
+                    {
+                        if ( bootcount != 0 &&
+                            (key == "MB_Cycles" || 
+                             key == "MB_QuartsPerDay" || 
+                             key == "MB_Temperature" ))
+                        {   
+                        // only save these three
+                            report_MB_agent += key+", "+TimeMark[key]+"\n";
+                        } else
+                        {
+                        // save all if bootcount == 0
+                            report_MB_agent += key+", "+TimeMark[key]+"\n";
+                        }
+                    } // key.find("MB") != null
+/*                    
+PT500 <- 
+{
+    PT500_MODEL = -1, once
+    PT500_PRESSURE_H2O = -1, each time
+    PT500_TEMPC = -1, each time
+    PT500_CALC = -1, never
+    PT500_BATV = -1 once
+}                    
+*/                    // PT-500 info
+                    // Put info into report_PT500_agent
+                    if(key.find("PT500") != null)
+                    {
+                        if ( bootcount != 0 &&
+                           (key == "PT500_PRESSURE_H2O" ||
+                            key == "PT500_TEMPC"))
+                        {
+                            report_PT500_agent += key+", "+PT500[key]+"\n";
+                        } else
+                        {
+                        // save all if bootcount == 0
+                            report_PT500_agent += key+", "+PT500[key]+"\n";
+                        }
+                    } // key.find("PT500") != null 
+/*
+MPX <-
+{
+    MPX_model = -1, one time
+    MPX_topdist = -1, each time
+    MPX_botdist = -1, each time
+    MPX_tempC = -1, each time
+    MPX_topcalc = -1, one time
+    MPX_botcalc = -1 one time
+}
+*/
+                    // Put info into report_MPX_agent
+                    if(key.find("MPX") != null)
+                    {
+                        if ( bootcount != 0 &&
+                           (key == "MPX_topdist" ||
+                            key == "MPX_botdist" ||
+                            key == "MPX_tempC"))
+                        {
+                            report_MPX_agent += key+", "+MPX[key]+"\n";
+                        } else
+                        {
+                        // save all if bootcount == 0
+                            report_MPX_agent += key+", "+MPX[key]+"\n";
+                        }
+                    } // key.find("MPX") != null 
+
+/*
+ICHEM <-
+{
+    ICHEM_month = -1, // 40002 int
+    ICHEM_day = -1, // 40003 int
+    ICHEM_year = -1, // 40004 int
+    ICHEM_hour = -1, // 40005 int
+    ICHEM_min = -1, // 40006 int
+    ICHEM_sec = -1, // 40007 int
+    
+    ICHEM_daily_volume = -1, // 40100 float
+    ICHEM_daily_cycles = -1, // 40102 float
+    ICHEM_injection_rate = -1, // 40104 float
+    ICHEM_accum_cycle_vol = -1, // 40106 float
+    ICHEM_accum_daily_vol = -1, // 40108 float
+    ICHEM_curr_tank_lev = -1, // 40110 float
+    ICHEM_fm_k_factor = -1, // 40112 float
+    ICHEM_yesterday_volume = -1, // 40114 float
+    ICHEM_week_volume = -1, // 40116 float
+    ICHEM_month_volume = -1, // 40118 float
+    ICHEM_year_volume = -1, // 40120 float
+    ICHEM_forever_volume = -1, // 40122 float
+}
+*/
+                    // Put info into report_ICHEM_agent
+                    if(key.find("ICHEM") != null)
+                    {
+                        server.log("()() agent Found ICHEM key: "+key);
+                        if ( bootcount != 0 // &&
+                            // (key == "MPX_topdist" ||
+                            //key == "MPX_botdist" ||
+                            // key == "MPX_tempC")
+                            )
+                        {
+                            report_ICHEM_agent += key+", "+ICHEM[key]+"\n";
+                        } else
+                        {
+                        // save all if bootcount == 0
+                            report_ICHEM_agent += key+", "+ICHEM[key]+"\n";
+                        }
+                    } // key.find("ICHEM") != null 
+                    
+                    // Put info into report_TM_agent
+                    if(key.find("TM") != null)
+                    {
+                        server.log("()() agent Found TM key: "+key);
+                        if ( bootcount != 0 // &&
+                            // (key == "MPX_topdist" ||
+                            //key == "MPX_botdist" ||
+                            // key == "MPX_tempC")
+                            )
+                        {
+                            report_TM_agent += key+", "+TimeMark[key]+"\n";
+                        } else
+                        {
+                        // save all if bootcount == 0
+                            report_TM_agent += key+", "+TimeMark[key]+"\n";
+                        }
+                    } // key.find("ICHEM") != null 
+
+     
+                } else
+                {   // list of other data
+                    // place other data in report_data string
+                    if (key.find("wakewhy") != null)
+                    {   // wakewhy is a numeric code 1 - 8
+                        // look up the string in the table
+                        val = val + ": " + impWakeCodes[val];
+                    }
+                    report_data += key+", "+val+"\n";
+                }
+            } // if(key.len() > 9 && (key.find("MB") == null ...
+        } // foreach (key in keys)
+
+
+        
+        // Report values to the log
+        if(report_pvoltest.len() != 0)
+        {
+            server.log("--***-- Voltage Channels --***--\n"+report_pvoltest);
+        }
+        if(report_MB.len() != 0)
+        {
+            server.log("--***-- Modbus Channels --***--\n"+report_MB);
+        }
+        if(report_MB_agent.len() != 0)
+        {
+            server.log("--***-- Agent Modbus Channels --***--\n"+report_MB_agent);
+        }
+        if(report_PT500_agent.len() != 0)
+        {
+            server.log("--***-- Agent PT500 Channels --***--\n"+report_PT500_agent);
+        }
+        if(report_MPX_agent.len() != 0)
+        {
+            server.log("--***-- Agent MPX Channels --***--\n"+report_MPX_agent);
+        }
+        if(report_ICHEM_agent.len() != 0)
+        {
+            server.log("--***-- Agent ICHEM Channels --***--\n"+report_ICHEM_agent);
+        }
+        if(report_TM_agent.len() != 0)
+        {
+            server.log("--***-- Agent TimeMark Channels --***--\n"+report_TM_agent);
+        }
+        if(report_data.len() != 0)
+        {
+            server.log("--***-- Data Channels --***--\n"+report_data);
+        }
+        server.log("--***-- End Channels --***--\n");
+/*        
+        local idx = 0; // default transducer mode
+        if(IMP_MODE == PUMP_MODE) // check for pump mode
+        {
+            if ((idx = makecsv.find("MB")) != null)
+            {
+                server.log("--***-- Voltages --***--\n"+makecsv.slice(0, idx-1));
+            } else
+            {
+                idx = 0; // didn't find "MB"; couldn't read Modbus
+            }
+        }
+        server.log("--***-- Data Channels --***--\n"+makecsv.slice(idx));
+        server.log("--***-- End Channels --***--\n");
+*/
+            // DEBUG dump csv string
+//        server.log("----****----Make CSV:\n"+makecsv);
+            // send data to Xively feed
+        dataToXively(makecsv);
+    }
+);  // device.on("tabledata",function(data)
+
+// Prepare the request with a csv payload 
+function dataToXively(csv) 
+{    
+    local XIVELY_API_ENDPOINT = "https://api.xively.com/v2/feeds/"+XIVELY_FEED+".csv";
+  local body =  csv;
+  local extraHeaders = {
+//                        "User-Agent": "xively-Imp-Lib/1.0", 
+                        "X-Api-Key": XIVELY_API_KEY,
+                        "Authorization": XIVELY_Account_Authorization,
+//                        "Content-Type": "text/csv",
+//                        "Content-Length": format("%d",body.len())
+//                        "Content-Length": body.len()
+                        };
+  local request = http.put(XIVELY_API_ENDPOINT, extraHeaders, body);
+                
+    server.log("--> Xively Feed: "+XIVELY_FEED_NAME+
+                ", ImpID: "+IMP_DEV_ID+
+                ", Network: "+IMP_SSID);
+    server.log("--> Package lenth: "+body.len()+
+                ", sam per: "+IMP_SAMPLE_PER+
+                "s, xmit per: "+IMP_XMIT_PER+"s, "+
+                (IMP_MODE?"Pump Mode":"Transducer Mode") );
+                
+//  server.log("put request: "+request+" extra headers: "+extraHeaders);
+  request.sendasync(dataToXivelyResponse);
+}   // function dataToXively(csv) 
+
+// This is the completed-request callback function, which logs the
+// incoming response's message and status code
+function dataToXivelyResponse(response) 
+{
+    if (response.statuscode == 200)
+    {
+        return;
+    }
+        // print message if status code is not 200
+    server.log("Status Code Put dataToXively CSV: " + response.statuscode + 
+                ", Message: " + (response.body==""?"none":response.body));
+}   // function dataToXivelyResponse(response) 
+
+// Get Xively/Imp connection data from a special Xively feed
+// called from device.on("metadata", function(data)
+function getXivelyFeedsTable()
+{
+        // This is the feed URL for the Xively Feeds Table
+    local url = "https://api.xively.com/v2/feeds/1879147064";
+//    local xively_apikey = "rOSourU7osPHSsLzveclcZGjVwhLek0GMhUPVhTfWwsMwY6v";  
+    local extraHeaders = {
+                        "X-Api-Key": "rOSourU7osPHSsLzveclcZGjVwhLek0GMhUPVhTfWwsMwY6v",
+//                        "User-Agent":"xively-Imp-Lib/1.0", 
+//                        "Content-Type":"text/csv",
+//                        "Authorization": "Basic a25pZ2h0aGF3azprbmlnM3QzOHdr"
+                        "Authorization": XIVELY_Account_Authorization,
+                        };
+        // Set up the get request
+    local request = http.get(url, extraHeaders);
+//    request.sendasync(processResponseFeeds);
+        // Make the request
+    local response = request.sendsync();
+        // Process the response
+    getXivelyFeedsTableResponse(response);
+    
+}   // function getXivelyFeedsTable()
+
+// This is the completed-request callback function, which logs the
+// incoming response's message and status code
+function getXivelyFeedsTableResponse(response) 
+{
+//    server.log("Status Code Xively Feeds: " + response.statuscode + ", Message: " + 
+//                (response.body==""?"none":response.body.slice(0,25)+"..."));
+                
+    // In the Special Xively Feed, under the description meta data field
+    // there are a group of lines such as the following.
+    // Each line contains a comma delimited fields that identify
+    
+    // impID, Xively feed name, feed id and feed api key.
+
+//    ImpID,       XivelyName,  XivelyFeed,      XivelyApiKey
+//  anyimp, SpecialData,   1879147064, rOSourU7osPHSsLzveclcZGjVwhLek0GMhUPVhTfWwsMwY6v
+//  235e9deb6e4936ee, WM235e9,   1932829324, 8HqPPy2ymRbzqZhT2TtdWM5h193oJmf8uQhoSdvtfxc9bAYA
+//  23219ab236a7c9ee, WM23219, 343437348, WlnQANSpdLKnerPxm62yhaxVVwEojtBjQT0Okru4zt7WDKwh
+    
+    // The goal here is to search through the lines with the imp ID (IMP_DEV_ID),
+    // find the line that starts with the imp ID, isolate the line, and
+    // split the line into the components.
+    
+    // take apart the response body and find Xively info
+    // First json decode the line. The data we are looking for
+    // is in the data.description string object
+    local data = http.jsondecode(response.body);
+        // match the line with the Imp DeviceID
+        // define a regex to look for the dev ID at the beginning
+        // of a line
+//    local match = @"("+IMP_DEV_ID+@".*\n)"; // regex string defined
+        // Removed the \n and the expression started working again
+//    local match = @"("+IMP_DEV_ID+@".*)"; // regex string defined
+        // does not match \n correctly
+//    local match = "("+IMP_DEV_ID+@".*\n)"; // regex string defined
+    local match = "("+IMP_DEV_ID+@".*)"; // regex string defined
+    server.log("-- match string: "+match);
+        // compile the regex
+    local ex = regexp(match);
+        // apply the regular expression
+    local result = ex.capture(data.description);
+    local xivelyInfo; // array for Xively name, feed and api key
+        // xivelyInfo[0] = ImpID
+        // xivelyInfo[1] = XivelyName
+        // xivelyInfo[2] = XivelyFeed
+        // xivelyInfo[3] = XivelyApiKey
+    
+        // if the regular expression returns null, there is no match
+    if (result == null)
+    {
+        server.log("--result == null: no match in: "+data.description);
+        return;
+    }
+            // if here, regular expression matched
+            // Next, grab the line with the imp ID and 
+            // split out the Xively feed information
+            
+            // result contains an array of tables with
+            // the begin and end position
+            // values for the match
+            
+//    server.log("search results for Imp-Xively Table: "+data.description.slice(result[0].begin,result[0].end));
+        // slice gets the string with imp ID
+        // split breaks the string apart by commas
+        // This gives an array with the following elements:
+        // impID,           Xively feed name,   feed id and feed api key.
+        // 235c87eb6e4936ee, PowerTest01,       2107508645, iKZLtPhqDBWssrASLyNyot8n1pUc5pshqOZlCgqlip0WH0je
+    xivelyInfo = split(data.description.slice(result[0].begin,result[0].end),", ");
+
+//    xivelyInfo[0] - Imp ID
+//    xivelyInfo[1] - Name of Xively Feed
+//    xivelyInfo[2] - Feed ID
+//    xivelyInfo[3] - API Key
+//    server.log("Imp-Xively Table Info: Imp ID: "+xivelyInfo[0]+" Feed Name: "+xivelyInfo[1]+
+//                " Feed ID: "+xivelyInfo[2]+" API key: "+xivelyInfo[3]);
+                
+    server.log("Imp-Xively Table Info: Imp ID: "+xivelyInfo[0]+" Feed Name: "+xivelyInfo[1]+
+                " Feed ID: "+xivelyInfo[2]);
+        
+        // strip gets rid of whitespace at the beginning and end of the string - needed 
+        // to get rid of new line
+    IMP_DEV_ID  = strip(xivelyInfo[X_IMP_DEV_ID]);
+    XIVELY_FEED_NAME = strip(xivelyInfo[X_XIVELY_FEED_NAME]);
+    XIVELY_FEED = strip(xivelyInfo[X_XIVELY_FEED]);
+    XIVELY_API_KEY = strip(xivelyInfo[X_XIVELY_API_KEY]);
+    
+    try // see if any of these are in the array
+    {
+        IMP_SAMPLE_PER = strip(xivelyInfo[X_IMP_SAMPLE_PER]).tofloat();
+        IMP_XMIT_PER = strip(xivelyInfo[X_IMP_XMIT_PER]).tofloat();
+        IMP_MODE = strip(xivelyInfo[X_IMP_MODE]).tointeger(); // MOTOR or TRANSDUCER mode
+        
+        IMP_ANALOG1_THRESHOLD = strip(xivelyInfo[X_IMP_ANALOG1_THRESHOLD]).tofloat();
+        IMP_ANALOG1_RANGE = strip(xivelyInfo[X_IMP_ANALOG1_RANGE]).tofloat();
+        
+    }  catch (e) 
+    {
+        // We don't care if it fails because default values will be there
+    }
+
+        // These should be either default values or set in the code above  
+/*
+    server.log("Imp samples period: "+IMP_SAMPLE_PER);
+    server.log("Imp transmit period: "+IMP_XMIT_PER);
+    server.log("Operating mode: "+(IMP_MODE?"Pump Mode":"Transducer Mode"));
+    server.log("Analog1 threhold: "+IMP_ANALOG1_THRESHOLD);
+    server.log("Analog1 range: "+IMP_ANALOG1_RANGE);
+*/    
+    local vars = { "IMP_SAMPLE_PER" : IMP_SAMPLE_PER,
+                    "IMP_XMIT_PER" : IMP_XMIT_PER,
+                    "IMP_MODE" : IMP_MODE,
+                    "IMP_ANALOG1_THRESHOLD" : IMP_ANALOG1_THRESHOLD,
+                    "IMP_ANALOG1_RANGE" : IMP_ANALOG1_RANGE,
+                };
+                
+        // Send information to device
+        device.send("impControlVariables", vars );
+
+        // in order to use device.send, the device must not
+        // be asleep. If asleep, it never receives the send.
+        // To make sure device is awake, use the device.onconnect
+        // method to send the device.send request
+    device.onconnect(function() 
+    {
+        // Send information to device
+        device.send("impControlVariables", vars );
+        server.log("######## Device connected to agent - impControlVariables");
+    });
+
+        // Since device.onconnect stays active and executes with
+        // each connect, it is necessary to reset it at disconnect time.
+        // At disconnect time, turn off the device.onconnect procedure
+        // so the device.send(newsetpoint, num) doesn't keep running
+    device.ondisconnect(function()
+    {
+        device.onconnect(function(){});
+    });
+}   // function getXivelyFeedsTableResponse(response) 
+
+// handle a trigger from Xively
+function requestHandler(request, response)
+{
+//    server.log("++++++++++++++received Xively trigger++++++++++++++++");
+    // if it was, send the value of it to the device
+    // device.send("cmd1 found: ", request.query["cmd1"]);
+    local num = 9;
+    local data;
+
+    if (request.query.cmd1.find("go", 1) )
+    {
+            // decode the url
+        data = http.urldecode(request.body);
+        local datajson;
+        // now decode json to make an object
+        datajson = http.jsondecode(data.body);
+        // get the value of the new setting from the object
+        num = datajson.triggering_datastream.value.value;
+        
+    // **** DEBUG ****//
+    // If there is no connect/disconnect, use this    
+        device.send("newsetpoint", num);
+        server.log("+++++ Trigger Received - Quarts per day: "+num+" +++++");
+        // in order to use device.send, the device must not
+        // be asleep. If asleep, it never receives the send.
+        // To make sure device is awake, use the device.onconnect
+        // method to send the device.send request
+        device.onconnect(function() 
+        {
+            device.send("newsetpoint", num);
+            server.log("######## Device connected to agent - newsetpoint");
+        });
+
+        // Since device.onconnect stays active and executes with
+        // each connect, it is necessary to reset it at disconnect time.
+        // At disconnect time, turn off the device.onconnect procedure
+        // so the device.send(newsetpoint, num) doesn't keep running
+        device.ondisconnect(function()
+        {
+            device.onconnect(function(){});
+        });
+    } else
+    {   // assume message in cmd1 for modem string
+        device.send("modem_write", request.query.cmd1);
+        server.log("cmd1 found in request.query: "+request.query.cmd1);
+    }
+
+try
+    {
+        // send a response back to whoever made the request
+        response.send(200, "OK"); // "200: OK" is standard return message
+    }
+    catch (ex)
+    {
+        response.send(500, ("Agent Error: " + ex)); // Send 500 response if error occured
+    }
+    
+}   // function requestHandler(request, response)
+
+    // set up the http request handler
+    // for Xively set qpd trigger
+http.onrequest(requestHandler);
+
+server.log("---AGENT CODE END---");
+    
