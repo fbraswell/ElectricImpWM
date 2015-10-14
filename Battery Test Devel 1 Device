@@ -1,0 +1,1573 @@
+// Device code for Data Test
+// server.log("---DEVICE START---");
+
+// When the Imp comes out of deep sleep, it starts here
+// log an ADC value each 10 sec, only tell the server each minute 
+t <- time();
+findMBaddr <- 0; // find MB address
+
+const MBwrite = 1;
+const MBread = 0;
+
+const MBcoilON = 0xFF; // Most Significant Byte
+const MBcoilOFF = 0x00;
+
+const MBmotorON = 1; // turn pump motor on
+const MBmotorOFF = 0; // turn pump motor off
+const MBmotorCoilAddr = 0x01; 
+
+// Quarts per Day Info
+const MBqpdRegisterAddr = 0x03;
+const MBrealNumberRegisters = 0x02;
+const MBrealNumberBytes = 0x04;
+
+// Modbus command codes
+const MB_ReadCoil = 1;
+const MB_ReadDiscreteInput = 2;
+const MB_ReadHoldingRegister = 3;
+const MB_ReadInputRegister = 4;
+const MB_WriteSingleCoil = 5;
+const MB_WriteSingleHoldingRegister = 6;
+const MB_WriteMultipleCoils = 15;
+const MB_WriteMultipleHoldingRegisters = 16;
+
+const MODBUS = "modbus";
+
+// MB address for devices
+// if the addr is set to -1 later in the prog
+// it means that there is no response - the
+// device is not present
+ MB_ADDR_TimeMark <- 0x10;
+ MB_ADDR_PT500 <- 0x01;
+ MB_ADDR_MPX <- 0x01;
+ MB_ADDR_ICHEM <- 0x02;
+ MB_ADDR_ICHEMfloat <- 0x02;
+ 
+// Model for MPX is 5
+MB_MODEL_MPX <-  5;
+// Model for PT-500 is 9
+MB_MODEL_PT500 <- 9;
+
+// Voltage regulator control & constants
+const REGULATOR_ON = 0x01;
+const REGULATOR_OFF = 0x00;
+const REGULATOR_DELAY = 0.25; // wait for sensor to power up
+
+// Pump mode or transducer mode
+// Pump mode reads Modbus
+const NOT_CONFIGURED = -1;
+const PUMP_MODE = 1;
+const TRANSDUCER_MODE = 0; 
+
+// constant strings
+// Making these strings constants helps
+// prevent memory leaks, because the 
+// strings are not created over and over again.
+
+const TABLEDATA = "tabledata";
+const BOOTCOUNT = "bootcount";
+const TIME = "time";
+const SWITCH1 = "switch1";
+const SWITCH2 = "switch2";
+const HALL1 = "hall1";
+const HALL2 = "hall2";
+const PIN1_ALERT = "pin1_alert";
+const VBAT = "vbat";
+const RSSI = "rssi";
+const MEMORY = "memory";
+const TEMP = "temp";
+const TEMP002 = "temp002";
+const ANALOG002 = "analog002";
+const LIGHTLEVEL = "lightlev";
+const WAKEREASON = "wakewhy";
+
+const METADATA = "metadata";
+const SSID = "ssid";
+const DEVID = "devid";
+const IMPTYPE = "imptype";
+
+// Imp002 pins
+HW_Temp002 <- hardware.pinA; // temp sensor voltage on pin2 and on IMP002 pinA
+HW_AnalogIn002 <- hardware.pinB; // second analog channel on IMP002 pinB
+HW_Hall002 <- hardware.pinD;    // second Hall switch
+HW_UART002 <- hardware.uart6E;  // UART channel for serial RS-232
+
+// Pump with Modbus Mode 
+ HW_MBUart1 <- hardware.uart1289;
+ HW_FlowCount <- hardware.pin1; // use pin1 for flow count
+ HW_Hall001 <- hardware.pin1; // or use pin1 for hall input
+ HW_ModBusDir <- hardware.pin2;
+
+HW_RegulatorCntl <- hardware.pin5; // common to both modes
+HW_Analog1In <- hardware.pin7; // Analog channel 1
+
+// Transducer only mode        
+ HW_Switch1 <- hardware.pin1;
+ HW_Switch2 <- hardware.pin2;
+ HW_Temp <- hardware.pin8; // temp sensor voltage
+ HW_BatV <- hardware.pin9; // battery voltage to Imp board
+
+// Check for hi and lo conditions using hysteresis algorithm
+// Analog channel 1
+// Analog1Volts_hi <- 1.1; // High voltage
+// Analog1Volts_lo <- 1.0; // Low voltage
+    // Switch tells us if above the trigger or below
+// Analog1Volts_switch <- 0; // switch starts at off
+
+impErrorCodes <-
+[
+    // Description Code
+    "no code 0", // code 0
+    "Illegal Function code 1", // code 1
+    "Illegal Data Value code 2", // code 2
+    "Illegal Data Value code 3", // code 3
+    "Slave Device Failure code 4", // code 4
+    "no code 5", // code 5
+    "Slave Device Busy code 6", // code 6
+    "no code 7", // code 7
+    "no code 8", // code 8
+    "no code 9", // code 9
+    "Gateway Path Unavailable code 10", // code 10
+    "Gateway Target Device Failed to Respond code 11" // code 11
+];
+
+/*
+Imp Wake Codes
+Code    Description
+    0   "The power was turned on"
+    1   "A software reset took place"
+    2   "An event timer fired"
+    3   "Pulse detected on Wakeup Pin"
+    4   "New Squirrel code downloaded"
+    5   "Squirrel runtime error"
+    6   "impOS update"
+    7   "A snooze-and-retry event"
+        // imp003 only
+    8   "Hardware reset"
+*/
+
+ICHEMrw <-
+{
+          // Floats start at 100    
+    Set_ICHEM_daily_volume = 40100, // 40100 float - RW
+
+    Set_ICHEM_custom_batch_volume = 40124, // 40124 float - RW
+    
+    Set_ICHEM_dynamic_unit_ratio = 40142, // 40142 float - RW
+    Set_ICHEM_dynamic_chem_ratio = 40144, // 40144 float - RW
+
+    Set_ICHEM_dynamic_rate = 40148, // 40148 float - RW
+    Set_ICHEM_dynamic_max_injection_volume = 40150, // 40150 float - RW
+    Set_ICHEM_dynamic_min_injection_volume = 40152, // 40152 float - RW
+
+    Set_ICHEM_production_unit_ext_override_hi_setpoint = 40156, // 40156 float - RW
+    Set_ICHEM_production_unit_ext_override_lo_setpoint = 40158, // 40158 float - RW
+    
+        // Set_ICHEM coils
+ 	Set_ICHEMcoil_Manual_Mode = 10000,	// coil 10000 - RW
+	Set_ICHEMcoil_Start_Pump = 10001,	// coil 10001 - RW
+
+	Set_ICHEMcoil_Low_Flow_Alarm_Disabled = 10003,	// coil 10003 - RW
+
+	Set_ICHEMcoil_Low_Flow_Alarm_Reset = 10005,	// coil 10005 - momentary WO
+	Set_ICHEMcoil_Reset_Yesterday_Vol = 10006,	// coil 10006 - momentary WO
+	Set_ICHEMcoil_Reset_Week_Vol = 10007,	// coil 10007 - momentary WO
+	Set_ICHEMcoil_Reset_Month_Vol = 10008,	// coil 10008 - momentary WO
+	Set_ICHEMcoil_Reset_Year_Vol = 10009,	// coil 10009 - momentary WO
+	Set_ICHEMcoil_Reset_Forever_Vol = 10010,	// coil 10010 - momentary WO
+	Set_ICHEMcoil_Reserved = 10011,	// coil 10011
+	Set_ICHEMcoil_Set_1_Min_Cycle_Freq = 10012,	// coil 10012 - momentary WO
+	Set_ICHEMcoil_Set_15_Min_Cycle_Freq = 10013,	// coil 10013 - momentary WO
+	Set_ICHEMcoil_Set_30_Min_Cycle_Freq = 10014,	// coil 10014 - momentary WO
+	Set_ICHEMcoil_Set_1_Hour_Cycle_Freq = 10015,	// coil 10015 - momentary WO
+	Set_ICHEMcoil_Set_6_Hr_Cycle_Freq = 10016,	// coil 10016 - momentary WO
+	Set_ICHEMcoil_Set_12_Hr_Cycle_Freq = 10017,	// coil 10017 - momentary WO
+	Set_ICHEMcoil_Set_Daily_Cycle_Freq = 10018,	// coil 10018 - momentary WO
+	Set_ICHEMcoil_Start_Custom_Batch = 10019,	// coil 10019 - momentary WO
+	Set_ICHEMcoil_Stop_Custom_Batch = 10020,	// coil 10020 - momentary WO
+	Set_ICHEMcoil_Low_Tank_Alert = 10021,	// coil 10021 - RO
+
+	Set_ICHEMcoil_Digital_Output_Interface_Enabled = 10025,	// coil 10025 - RW
+	Set_ICHEMcoil_External_Override_Enabled = 10026,	// coil 10026 - RW
+	Set_ICHEMcoil_Start_Batch_Catch = 10029,	// coil 10029 - momentary WO
+	Set_ICHEMcoil_Dynamic_Flow_Enabled = 10030,	// coil 10030 - RW
+	Set_ICHEMcoil_Dynamic_Max_Flow_Enabled = 10031,	// coil 10031 - RW
+	Set_ICHEMcoil_Dynamic_Min_Flow_Enabled = 10032,	// coil 10032 - RW
+	Set_ICHEMcoil_Production_Unit_External_Override_HI_Enalbed = 10033,	// coil 10033 - RW
+	Set_ICHEMcoil_Production_Unit_External_Override_LO_Enalbed = 10034,	// coil 10034 - RW
+
+	Set_ICHEMcoil_Recovery_with_Time_on_Low_Flow_Alarm_Enabled = 10037,	// coil 10037 - RW
+}
+
+XmitNow <- 0; // used to force Xmit to agent - starts false
+
+// UART Communication example for the Modbus communication
+// Transfer data from Imp uart, pins 1 CTS (not used by us), 2 RTS, 8 Tx, 9 Rx
+// Data will be sent form the Imp to the Spark Fun RS-485 break-out board
+// The board uses the RTS signal to control the direction of the data on 
+// the RS-485 wires
+
+// Send back Imp information
+agent.on("getImpInfo", function(nouse)
+{
+        // Respond back with nv.meta which
+        // contains the ImpID and Network Name
+        // This request only comes if the device is running
+        // but the agent has been reset
+    server.log("Send back metadata");
+    agent.send(METADATA, nv.meta);
+}); // agent.on("getImpInfo"
+
+agent.on("modem_write", function(str)
+{
+    server.log("##1#received str from Agent: "+str);
+    HW_UART002.write("\n"+str+"\n"); // write string to port
+});
+
+agent.on("impControlVariables", function(vars)
+{
+    // Get the variables for sample period, xmit period and Imp mode
+    
+    nv.PUMP = vars.IMP_MODE; // Pump controller Module?
+    nv.XMIT_PERIOD = vars.IMP_XMIT_PER; // Time between transmissions
+    nv.SAMPLE_PERIOD = vars.IMP_SAMPLE_PER; // Time between samples
+    
+    nv.IMP_ANALOG1_THRESHOLD = vars.IMP_ANALOG1_THRESHOLD;
+    nv.IMP_ANALOG1_RANGE = vars.IMP_ANALOG1_RANGE;
+    
+    // Calculate the high and low hysteresis values
+    nv.Analog1Volts_hi = nv.IMP_ANALOG1_THRESHOLD + 0.5 * nv.IMP_ANALOG1_RANGE; // High voltage
+    nv.Analog1Volts_lo = nv.IMP_ANALOG1_THRESHOLD - 0.5 * nv.IMP_ANALOG1_RANGE; // Low voltage
+/*    
+    server.log("---nv.PUMP: "+nv.PUMP+" nv.XMIT_PERIOD: "+nv.XMIT_PERIOD+" nv.SAMPLE_PERIOD: "+nv.SAMPLE_PERIOD+
+                " nv.IMP_ANALOG1_THRESHOLD: "+nv.IMP_ANALOG1_THRESHOLD+
+                " nv.IMP_ANALOG1_RANGE: "+nv.IMP_ANALOG1_RANGE+" nv.time: "+nv.time);
+*/
+}); // agent.on("impControlVariables"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_daily_volume""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_daily_volume", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_dynamic_rate""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_dynamic_rate", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_custom_batch_volume""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_custom_batch_volume", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_dynamic_unit_ratio""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_dynamic_unit_ratio", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_dynamic_chem_ratio""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_dynamic_chem_ratio", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_dynamic_max_injection_volume""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_dynamic_max_injection_volume", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_dynamic_min_injection_volume""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_dynamic_min_injection_volume", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_production_unit_ext_override_hi_setpoint""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_production_unit_ext_override_hi_setpoint", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+// set an ICHEM controller Modbus float value
+agent.on(@"""Set_ICHEM_production_unit_ext_override_lo_setpoint""", function(ICHEMarray)
+{
+    writeICHEM("Set_ICHEM_production_unit_ext_override_lo_setpoint", ICHEMarray);
+}); // agent.on("Set_ICHEM_daily_volume"
+
+function writeICHEM(ICHEMregister_name, ICHEMarray)
+{
+    // look up register address in table using name sent from agent
+    local ICHEMregister = ICHEMrw[ICHEMregister_name];
+//    local ICHEMarrayReverse = ICHEMarray.reverse();
+//    local ICHEMarrayReverse = [ ICHEMarray[3], ICHEMarray[2], ICHEMarray[1], ICHEMarray[0] ];
+//    local ICHEMarraySwapCDAB = [ ICHEMarray[2], ICHEMarray[3], ICHEMarray[0], ICHEMarray[1] ];
+    local ICHEMarraySwapBADC = [ ICHEMarray[1], ICHEMarray[0], ICHEMarray[3], ICHEMarray[2] ];
+//    server.log("++++ ICHEM register "+ICHEMregister_name+" number: "+ICHEMregister);
+    server.log("++++ ICHEMarray 0: "+ICHEMarray[0]+" 1: "+ICHEMarray[1]+" 2: "+ICHEMarray[2]+" 3: "+ICHEMarray[3]);
+//    server.log("++++ ICHEMarrayReverse 0: "+ICHEMarrayReverse[0]+" 1: "+ICHEMarrayReverse[1]+" 2: "+ICHEMarrayReverse[2]+" 3: "+ICHEMarrayReverse[3]);
+
+    // Send ICHEM floating point number to register
+        // MB_ADDR_ICHEMfloat - MB hardware address
+        // ICHEMregister address of register
+        // MBrealNumberRegisters = 0x02; 2 registers
+        // MBrealNumberBytes = 0x04; - 4 bytes
+        // four bytes of data in ICHEMarray
+        
+        // Write multiple holding registers
+        // In this case there are two registers (4 bytes)
+        // needed for a floating point number
+    return MBwriteMultipleHoldingRegisters(
+            MB_ADDR_ICHEMfloat, // MB physical addr
+            ICHEMregister-40000, // addr of register minus offset
+            MBrealNumberRegisters, // 2 registers for float
+            MBrealNumberBytes, // 4 bytes
+            // data array with number of bytes
+            ICHEMarraySwapBADC); 
+} // function writeICHEM(ICHEMregister_name, ICHEMarray)
+
+
+//------------ Coils ------------
+
+// set an ICHEM controller Modbus coil value
+agent.on(@"""Set_ICHEMcoil_Manual_Mode""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Manual_Mode", coil_val);
+}); // agent.on("Set_ICHEMcoil_Manual_Mode"
+
+agent.on(@"""Set_ICHEMcoil_Start_Pump""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Start_Pump", coil_val);
+}); // agent.on("Set_ICHEMcoil_Start_Pump"
+
+
+
+
+agent.on(@"""Set_ICHEMcoil_Low_Flow_Alarm_Disabled""", function(coil_val)
+{
+    local MBreturn = writeICHEMcoil("Set_ICHEMcoil_Low_Flow_Alarm_Disabled", coil_val);
+    local MBstr = "MBstr: ";
+    for(local i=0; i<MBreturn.len(); i++)
+    {
+        MBstr = MBstr+MBreturn[i]+", ";
+    }
+    server.log("=========MBreturn: "+MBstr);
+}); // agent.on("Set_ICHEMcoil_Low_Flow_Alarm_Reset"
+
+
+agent.on(@"""Set_ICHEMcoil_Low_Flow_Alarm_Reset""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Low_Flow_Alarm_Reset", coil_val);
+}); // agent.on("Set_ICHEMcoil_Low_Flow_Alarm_Reset"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Reset_Yesterday_Vol""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Reset_Yesterday_Vol", coil_val);
+}); // agent.on("Set_ICHEMcoil_Reset_Yesterday_Vol"
+
+agent.on(@"""Set_ICHEMcoil_Reset_Week_Vol""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Reset_Week_Vol", coil_val);
+}); // agent.on("Set_ICHEMcoil_Reset_Week_Vol"
+
+agent.on(@"""Set_ICHEMcoil_Reset_Month_Vol""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Reset_Month_Vol", coil_val);
+}); // agent.on("Set_ICHEMcoil_Reset_Month_Vol"
+
+agent.on(@"""Set_ICHEMcoil_Reset_Year_Vol""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Reset_Year_Vol", coil_val);
+}); // agent.on("Set_ICHEMcoil_Reset_Year_Vol"
+
+agent.on(@"""Set_ICHEMcoil_Reset_Forever_Vol""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Reset_Forever_Vol", coil_val);
+}); // agent.on("Set_ICHEMcoil_Reset_Forever_Vol"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Set_1_Min_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_1_Min_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_1_Min_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_15_Min_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_15_Min_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_15_Min_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_30_Min_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_30_Min_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_30_Min_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_1_Hour_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_1_Hour_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_1_Hour_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_6_Hr_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_6_Hr_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_6_Hr_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_12_Hr_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_12_Hr_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_12_Hr_Cycle_Freq"
+
+agent.on(@"""Set_ICHEMcoil_Set_Daily_Cycle_Freq""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Set_Daily_Cycle_Freq", coil_val);
+}); // agent.on("Set_ICHEMcoil_Set_Daily_Cycle_Freq"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Start_Custom_Batch""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Start_Custom_Batch", coil_val);
+}); // agent.on("Set_ICHEMcoil_Start_Custom_Batch"
+
+agent.on(@"""Set_ICHEMcoil_Stop_Custom_Batch""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Stop_Custom_Batch", coil_val);
+}); // agent.on("Set_ICHEMcoil_Stop_Custom_Batch"
+
+agent.on(@"""Set_ICHEMcoil_Low_Battery_Alarm_Reset""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Low_Battery_Alarm_Reset", coil_val);
+}); // agent.on("Set_ICHEMcoil_Low_Battery_Alarm_Reset"
+
+agent.on(@"""Set_ICHEMcoil_Digital_Output_Interface_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Digital_Output_Interface_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_Digital_Output_Interface_Enabled"
+
+agent.on(@"""Set_ICHEMcoil_External_Override_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_External_Override_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_External_Override_Enabled"
+
+agent.on(@"""Set_ICHEMcoil_Start_Batch_Catch""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Start_Batch_Catch", coil_val);
+}); // agent.on("Set_ICHEMcoil_Start_Batch_Catch"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Dynamic_Flow_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Dynamic_Flow_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_Dynamic_Flow_Enabled"
+
+agent.on(@"""Set_ICHEMcoil_Dynamic_Max_Flow_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Dynamic_Max_Flow_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_Dynamic_Max_Flow_Enabled"
+
+agent.on(@"""Set_ICHEMcoil_Dynamic_Min_Flow_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Dynamic_Min_Flow_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_Dynamic_Min_Flow_Enabled"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Production_Unit_External_Override_HI_Enalbed""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Production_Unit_External_Override_HI_Enalbed", coil_val);
+}); // agent.on("Set_ICHEMcoil_Production_Unit_External_Override_HI_Enalbed"
+
+agent.on(@"""Set_ICHEMcoil_Production_Unit_External_Override_LO_Enalbed""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Production_Unit_External_Override_LO_Enalbed", coil_val);
+}); // agent.on("Set_ICHEMcoil_Production_Unit_External_Override_LO_Enalbed"
+
+
+
+agent.on(@"""Set_ICHEMcoil_Recovery_with_Time_on_Low_Flow_Alarm_Enabled""", function(coil_val)
+{
+    writeICHEMcoil("Set_ICHEMcoil_Recovery_with_Time_on_Low_Flow_Alarm_Enabled", coil_val);
+}); // agent.on("Set_ICHEMcoil_Recovery_with_Time_on_Low_Flow_Alarm_Enabled"
+
+
+
+function writeICHEMcoil(ICHEMcoil_name, coil_value)
+{
+    // look up coil address in table using name sent from agent
+    local ICHEMcoil = ICHEMrw[ICHEMcoil_name];
+    return MBwriteSingleCoil(
+            MB_ADDR_ICHEM, // MB physical addr
+            ICHEMcoil-10000, // addr of register minus offset
+            coil_value.tointeger()?255:0); // must be 0 or 1 - MB needs 0 or 255
+} // function writeICHEMcoil(ICHEMcoil_name, coil_value)
+
+
+// Receive a new quarts per day setpoint from agent
+agent.on("newsetpoint", function(newsetpoint) 
+{
+//    server.log("^^^^^^^^^^^^^Setting QuartsPerDay to: " + newsetpoint);
+    writeQuartsPerDay(newsetpoint); 
+}); // agent.on("newsetpoint"
+
+// Turn the Modbus pump motor on or off
+function setMotorState(state) 
+{
+    if(state == MBmotorON)
+    {
+       return MBwriteSingleCoil(MB_ADDR_TimeMark, MBmotorCoilAddr, MBcoilON);
+    } else // MBmotorOFF
+    {
+        return MBwriteSingleCoil(MB_ADDR_TimeMark, MBmotorCoilAddr, MBcoilOFF);
+    }
+}   // function setMotorState(state) 
+
+function writeQuartsPerDay(value) 
+{
+    // hex string "10 06 00 03 41 28 00 00 F7 33"
+    // Modbus address - 0x10
+    // command - 0x06
+    // register - 0x0003
+    // data (32 bit float) 0x41280000
+    // CRC 0xF733
+    
+        // Motor cannot be set to 0 using quarts per day
+        // The minimum qpd value is 0.1 qpd, not quite 0
+        // To turn the motor completely off, you must
+        // use a different command to set the motor to off
+    if (value.tofloat() > 0.1)
+//        setMotorState(1);
+        setMotorState(MBmotorON);
+    else
+//        setMotorState(0);
+        setMotorState(MBmotorOFF);
+    
+    if (value.tofloat() > 0.1) 
+    {
+        local qpdCommand = [ 0x10, 0x10, 0x00, 0x03, 0x00, 0x02, 0x04 ];
+        
+        local flBlob = blob(4);
+        flBlob.writen(value.tofloat(), 'f');
+        
+        qpdCommand.append(flBlob[3]);
+        qpdCommand.append(flBlob[2]);
+        qpdCommand.append(flBlob[1]);
+        qpdCommand.append(flBlob[0]);
+        
+        // Quarts per Day Info
+        // MBqpdRegisterAddr = 0x03;
+        // MBrealNumberRegisters = 0x02;
+        // MBrealNumberBytes = 0x04;
+        // four bytes of data
+        
+        // Write multiple holding registers
+
+        return MBwriteMultipleHoldingRegisters(
+            MB_ADDR_TimeMark,
+            MBqpdRegisterAddr,
+            MBrealNumberRegisters, 
+            MBrealNumberBytes, 
+            // data array with number of bytes
+            [flBlob[3], flBlob[2], flBlob[1], flBlob[0]]);  
+    }
+}   // writeQuartsPerDay(value)
+
+// CRC calculation code below is needed for the Modbus
+// data packages.
+//*************************************************
+//************ CRC Calculation Code ***************
+//*************************************************
+
+// blob of CRC values for high–order byte
+const auchCRCHi = "\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40\x00\xC1\x81\x40\x01\xC0\x80\x41\x00\xC1\x81\x40\x01\xC0\x80\x41\x01\xC0\x80\x41\x00\xC1\x81\x40";
+// blob of CRC values for low–order byte
+const auchCRCLo = "\x00\xC0\xC1\x01\xC3\x03\x02\xC2\xC6\x06\x07\xC7\x05\xC5\xC4\x04\xCC\x0C\x0D\xCD\x0F\xCF\xCE\x0E\x0A\xCA\xCB\x0B\xC9\x09\x08\xC8\xD8\x18\x19\xD9\x1B\xDB\xDA\x1A\x1E\xDE\xDF\x1F\xDD\x1D\x1C\xDC\x14\xD4\xD5\x15\xD7\x17\x16\xD6\xD2\x12\x13\xD3\x11\xD1\xD0\x10\xF0\x30\x31\xF1\x33\xF3\xF2\x32\x36\xF6\xF7\x37\xF5\x35\x34\xF4\x3C\xFC\xFD\x3D\xFF\x3F\x3E\xFE\xFA\x3A\x3B\xFB\x39\xF9\xF8\x38\x28\xE8\xE9\x29\xEB\x2B\x2A\xEA\xEE\x2E\x2F\xEF\x2D\xED\xEC\x2C\xE4\x24\x25\xE5\x27\xE7\xE6\x26\x22\xE2\xE3\x23\xE1\x21\x20\xE0\xA0\x60\x61\xA1\x63\xA3\xA2\x62\x66\xA6\xA7\x67\xA5\x65\x64\xA4\x6C\xAC\xAD\x6D\xAF\x6F\x6E\xAE\xAA\x6A\x6B\xAB\x69\xA9\xA8\x68\x78\xB8\xB9\x79\xBB\x7B\x7A\xBA\xBE\x7E\x7F\xBF\x7D\xBD\xBC\x7C\xB4\x74\x75\xB5\x77\xB7\xB6\x76\x72\xB2\xB3\x73\xB1\x71\x70\xB0\x50\x90\x91\x51\x93\x53\x52\x92\x96\x56\x57\x97\x55\x95\x94\x54\x9C\x5C\x5D\x9D\x5F\x9F\x9E\x5E\x5A\x9A\x9B\x5B\x99\x59\x58\x98\x88\x48\x49\x89\x4B\x8B\x8A\x4A\x4E\x8E\x8F\x4F\x8D\x4D\x4C\x8C\x44\x84\x85\x45\x87\x47\x46\x86\x82\x42\x43\x83\x41\x81\x80\x40";
+ 
+function calculateCRC ( puchMsg, usDataLen )
+{
+    //unsigned char *puchMsg ; // message to calculate CRC upon
+    //unsigned short usDataLen ; // quantity of bytes in message
+    local uchCRCHi = 0xFF ; // high byte of CRC initialized
+    local uchCRCLo = 0xFF ; // low byte of CRC initialized
+    local uIndex ; // will index into CRC lookup table
+    local i = 0;
+    while (usDataLen--)
+    { // pass through message buffer
+        uIndex = uchCRCLo ^ puchMsg[i].tointeger() ; // calculate the CRC
+        uchCRCLo = uchCRCHi ^ auchCRCHi[uIndex] ;
+        uchCRCHi = auchCRCLo[uIndex] ;
+        i++
+    }
+    return [uchCRCLo, uchCRCHi] ;
+}   // function calculateCRC ( puchMsg, usDataLen )
+
+//*************************************************
+
+// read from MB channel
+function readMB()
+{
+    HW_ModBusDir.write(MBread);
+    imp.sleep(50.0/1000.0); // wait for response
+    
+    local byte = -1;
+    local MBbytes = [];
+        // Read MB register data from UART
+    while ((byte = HW_MBUart1.read()) != -1)
+    {
+        MBbytes.append(byte); // add byte to end of array
+        imp.sleep(100.0/1000.0);    // wait for next byte
+    } 
+    return MBbytes;
+} // readMB()
+
+// write to MB channel
+function writeMB(MBarray)
+{
+    // calculate the crc error code
+    local crc = calculateCRC(MBarray, MBarray.len());
+    // attach crc to end of array
+    MBarray.extend(crc);
+
+    // set chip for write to MB
+    HW_ModBusDir.write(MBwrite);
+    // send each byte to MB device
+    foreach(val in MBarray)
+    {
+        HW_MBUart1.write(val);
+    }
+    // need small delay to let bytes finish sending
+//    imp.sleep(15.0/1000.0); // wait for response
+    // Adjust the delay based on the number of bytes sent
+//    imp.sleep( (MBarray.len() * 1.1) / 1000.0 );
+    imp.sleep( (MBarray.len() * 1.3) / 1000.0 );
+//    server.log("---write MB---");
+} // writeMB(MBarray)
+
+
+// qpdCommand = [ 0x10, 0x10, 0x00, 0x03, 0x00, 0x02, 0x04 ];
+// Quarts per Day Info
+// const MBqpdRegisterAddr = 0x03;
+// const MBrealNumberRegisters = 0x02;
+// const MBrealNumberBytes = 0x04;
+
+// MBqpdRegisterAddr, 
+// MBrealNumberRegisters, 
+// MBrealNumberBytes, 
+// dataArray
+
+// Write multiple holding registers
+function MBwriteMultipleHoldingRegisters(MBaddr,
+            startAddr, numRegisters, numBytes, array)
+{
+    local MBcmd = [MBaddr, MB_WriteMultipleHoldingRegisters,
+                    // Big Endian MSByte first
+                    // assume for now, MSByte is 0
+                    0, startAddr
+                    // number of registers to send
+                    0, numRegisters,
+                    // the number of bytes
+                    numBytes]
+
+    // append array bytes onto end of MBcmd
+    foreach(val in array)
+    {
+        MBcmd.append(val);
+    }
+    
+    writeMB(MBcmd); // send MB data 
+    return readMB();
+} // function MBwriteMultipleHoldingRegisters()
+
+// motorCommand = [ 0x10, 0x05, 0x00, 0x01, 0xFF, 0x00 ]; // motor on
+// motorCommand = [ 0x10, 0x05, 0x00, 0x01, 0x00, 0x00 ]; // motor off
+
+// Write single coil
+function MBwriteSingleCoil(MBaddr, coilAddr, coilValue)
+{
+    local MBcmd = [MBaddr, MB_WriteSingleCoil,
+                    // Big Endian MSByte first
+                    // assume for now, MSByte is 0
+                    0, coilAddr,
+                    // the upper byte is the value
+                    coilValue, 0];
+    local MBstr = "values: ";
+    for(local i=0; i<MBcmd.len(); i++)
+    {
+        MBstr = MBstr+MBcmd[i]+", ";
+    }
+    server.log("===== coil cmd: "+MBstr);
+    writeMB(MBcmd);
+    return readMB();
+} // function MBwriteSingleCoil()
+
+
+// Read MB coils - code 1
+// return the MB response
+function MBreadMultipleCoils(MBaddr, startAddr, qtyCoils)
+{
+        // MB command: MBaddr byte, MBcode byte, start addr word, quantity word
+    // upper and lower bytes
+    local ubs, lbs, ube, lbe;
+    ubs = startAddr >> 8;
+    lbs = startAddr & 0x00ff;
+    ube = qtyCoils >> 8;
+    lbe = qtyCoils & 0x00ff;
+//    server.log("Input upper st "+ubs+"; lower st "+lbs+
+//                "; upper end "+ube+"; lower end "+lbe);
+    local MBcmd = [MBaddr, MB_ReadCoil
+                    // Big Endian MSByte first
+                    // assume for now, MSByte is 0
+                    ubs, lbs, 
+                    // 0, startAddr,
+                    ube, lbe];
+                    // 0, endAddr];
+    writeMB(MBcmd);
+    return readMB();
+} // function MBreadMultipleCoils(MBaddr, startAddr, qtyCoils)
+
+// Read MB holding registers - code 3
+// return the MB response
+
+function MBreadInputRegisters(MBaddr, startAddr, endAddr)
+{
+    // MB command: MBaddr byte, MBcode byte, start addr word, end addr word
+    // upper and lower bytes
+    local ubs, lbs, ube, lbe;
+    ubs = startAddr >> 8;
+    lbs = startAddr & 0x00ff;
+    ube = endAddr >> 8;
+    lbe = endAddr & 0x00ff;
+//    server.log("Input upper st "+ubs+"; lower st "+lbs+
+//                "; upper end "+ube+"; lower end "+lbe);
+    local MBcmd = [MBaddr, MB_ReadInputRegister
+                    // Big Endian MSByte first
+                    // assume for now, MSByte is 0
+                    ubs, lbs, 
+                    // 0, startAddr,
+                    ube, lbe];
+                    // 0, endAddr];
+    writeMB(MBcmd); // send the command
+        // read the response and return array
+    return readMB();
+} // function MBreadInputRegisters(MBaddr, startAddr, endAddr)
+
+function MBreadHoldingRegisters(MBaddr, startAddr, endAddr)
+{
+        // MB command: MBaddr byte, MBcode byte, start addr word, end addr word
+    // upper and lower bytes
+    local ubs, lbs, ube, lbe;
+    ubs = startAddr >> 8;
+    lbs = startAddr & 0x00ff;
+    ube = endAddr >> 8;
+    lbe = endAddr & 0x00ff;
+//    server.log("holding upper st "+ubs+"; lower st "+lbs+
+//                "; upper end "+ube+"; lower end "+lbe);
+    local MBcmd = [MBaddr, MB_ReadHoldingRegister
+                    // Big Endian MSByte first
+                    // assume for now, MSByte is 0
+                    ubs, lbs, 
+                    // 0, startAddr,
+                    ube, lbe];
+                    // 0, endAddr];
+    writeMB(MBcmd); // send the command
+        // read the response and return array
+    return readMB();
+} // function MBreadHoldingRegisters(MBaddr, startAddr, endAddr)
+
+// Get Modbus holding register data & decode it
+function logMB_TimeMark() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_TimeMark_Found < nv.MB_timesfound) return;
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_TimeMark, 0, 15);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_TimeMark_Found++; // Found TM Modbus data
+        // MB Data available in the array
+        const TIME_MARK_JAN14 = "time_mark_jan14";
+        agent.send(TIME_MARK_JAN14, a); // Send raw data to Agent
+        
+    } else 
+    {   // no data in MB array
+        server.log("Can't read Time Mark MODBUS registers!");
+        nv.MB_ADDR_TimeMark_Found--; // Didn't find TM Modbus data
+//        MB_ADDR_TimeMark = -1;
+    }
+} // function logMB_TimeMark() 
+
+// Get Modbus coil register data & decode it
+function logMBcoils_TimeMark() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_TimeMarkCoils_Found < nv.MB_timesfound) return;
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadMultipleCoils(MB_ADDR_TimeMark, 0, 8);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 2) 
+    {   
+        nv.MB_ADDR_TimeMarkCoils_Found++; // Found TM Modbus data
+        // MB Data available in the array
+        const TIME_MARK_JAN14_coils = "time_mark_jan14_coils";
+        agent.send(TIME_MARK_JAN14_coils, a); // Send raw data to Agent
+        
+    } else 
+    {   // no data in MB array
+        server.log("Can't read Time Mark MODBUS Coils!");
+        nv.MB_ADDR_TimeMarkCoils_Found--; // Didn't find TM Modbus data
+//        MB_ADDR_TimeMark = -1;
+    }
+} // function logMBcoils_TimeMark() 
+//*************************************************
+
+// APG PT-500 Modbus Holding Registers Handler
+function logMB_APG() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_PT500_Found < nv.MB_timesfound) return;
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_PT500, 400, 20);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_PT500_Found++; // Found PT-500 Modbus data
+        // MB Data available in the array
+        server.log("-- APG data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+        const MB_PT500_HREG = "MB_PT500_HREG";
+        agent.send(MB_PT500_HREG, a);
+//        foreach (key, val in a)
+//        {
+//            server.log("APG key: "+key+" val: "+val)
+//        }
+        
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read APG MODBUS registers!");
+        nv.MB_ADDR_PT500_Found--; // Didn't find PT-500 Modbus data
+    }
+} // function logMB_APG() 
+
+// APG PT-500 Modbus Input Registers Handler
+function logMB_APG_ireg() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_PT500_Found < nv.MB_timesfound) return;
+//    local d = date(); 
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadInputRegisters(MB_ADDR_PT500, 298, 12);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        
+// Model for MPX is 5
+// MB_MODEL_MPX <- 5;
+// Model for PT-500 is 9
+// MB_MODEL_PT500 <- 9;
+        local model = (a[3] << 8) | a[4];
+        if (model == MB_MODEL_PT500)
+        {
+            nv.MB_ADDR_PT500_Found++; // Found PT-500 Modbus data
+            // MB Data available in the array
+//          server.log("-- APG ireg data array length: "+a.len());
+//          server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+            const MB_PT500_IREG = "MB_PT500_IREG";
+            agent.send(MB_PT500_IREG, a);
+//           foreach (key, val in a)
+//          {
+ //            server.log("APG ireg key: "+key+" val: "+val)
+//          }
+
+        } else // if (model == MB_MODEL_PT500)
+        {
+            server.log("Can't find APG ireg MODBUS registers! Model = "+model);
+            nv.MB_ADDR_PT500_Found--; // Didn't find PT-500 Modbus data
+        }
+    } else // if (a.len() > 0) 
+    {   // no data in APG MB array
+        server.log("Can't read APG ireg MODBUS registers!");
+        nv.MB_ADDR_PT500_Found--; // Didn't find PT-500 Modbus data
+    }
+} // function logMB_APG_ireg() 
+
+// APG MPX Magnetostrictive Modbus Input Registers Handler
+function logMB_MPX_ireg() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_MPX_Found < nv.MB_timesfound) return;
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadInputRegisters(MB_ADDR_MPX, 298, 8);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+// Model for MPX is 5
+// MB_MODEL_MPX <- 5;
+// Model for PT-500 is 9
+// MB_MODEL_PT500 <- 9;
+        local model = (a[3] << 8) | a[4];
+        if (model == MB_MODEL_MPX)
+        {
+            nv.MB_ADDR_MPX_Found++; // Found PT-500 Modbus data
+            // MB Data available in the array
+//            server.log("-- MPX ireg data array length: "+a.len());
+            const MB_MPX_IREG = "MB_MPX_IREG";
+            agent.send(MB_MPX_IREG, a);
+//          foreach (key, val in a)
+//          {
+ //             server.log("MPX ireg key: "+key+" val: "+val)
+//          }
+           
+        } else // if (model == MB_MODEL_MPX)
+        {
+            server.log("Can't find  MPX ireg MODBUS registers! Model = "+model);
+            nv.MB_ADDR_MPX_Found--; // Didn't find PT-500 Modbus data
+        }
+    } else // if (a.len() > 0) 
+    {   // no data in APG MB array
+        server.log("Can't read MPX ireg MODBUS registers!");
+        nv.MB_ADDR_MPX_Found--; // Didn't find PT-500 Modbus data
+    }
+} // function logMB_MPX_ireg() 
+
+// ICHEM Modbus Handler - Holding Registers
+function logMB_ICHEM() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_ICHEM_Found < nv.MB_timesfound) return; 
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_ICHEM, 0, 30);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_ICHEM_Found++; // Found ICHEM Modbus Data
+        
+        const ICHEM_HREG = "iChem_hreg";
+        agent.send(ICHEM_HREG, a); // Send raw data to Agent
+        
+        // MB Data available in the array
+//        server.log("-- ICHEM data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+//        foreach (key, val in a)
+//        {
+//            server.log("device ICHEM key: "+key+" val: "+val)
+//        }
+     
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read ICHEM MODBUS registers!");
+        nv.MB_ADDR_ICHEM_Found--; // Didn't find ICHEM Modbus Data
+    }
+} // function logMB_ICHEM() 
+
+// ICHEM Modbus Handler - Holding Registers
+function logMB_ICHEM1() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_ICHEM1_Found < nv.MB_timesfound) return; 
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_ICHEM, 29, 60);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_ICHEM1_Found++; // Found ICHEM Modbus Data
+        
+        const ICHEM_HREG1 = "iChem_hreg1";
+        agent.send(ICHEM_HREG1, a); // Send raw data to Agent
+        
+        // MB Data available in the array
+//        server.log("-- ICHEM data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+//        foreach (key, val in a)
+//        {
+//            server.log("device ICHEM key: "+key+" val: "+val)
+//        }
+     
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read ICHEM 1 MODBUS registers!");
+        nv.MB_ADDR_ICHEM1_Found--; // Didn't find ICHEM Modbus Data
+    }
+} // function logMB_ICHEM() 
+
+function logMB_ICHEMfloat() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_ICHEMfloat_Found < nv.MB_timesfound) return; 
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_ICHEMfloat, 100, 100);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_ICHEMfloat_Found++; // Found ICHEM Modbus Data
+        
+        const ICHEM_HREGfloat = "iChem_hreg_float";
+        agent.send(ICHEM_HREGfloat, a); // Send raw data to Agent
+        
+        // MB Data available in the array
+//        server.log("-- ICHEM float data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+//        foreach (key, val in a)
+//        {
+//            server.log("device ICHEM key: "+key+" val: "+val)
+//        }
+     
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read ICHEM float MODBUS registers!");
+        nv.MB_ADDR_ICHEMfloat_Found--; // Didn't find ICHEM Modbus Data
+    }
+} // function logMB_ICHEMfloat() 
+
+function logMB_ICHEMfloat1() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_ICHEMfloat1_Found < nv.MB_timesfound) return; 
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadHoldingRegisters(MB_ADDR_ICHEMfloat, 132, 100);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   
+        nv.MB_ADDR_ICHEMfloat1_Found++; // Found ICHEM Modbus Data
+        
+        const ICHEM_HREGfloat1 = "iChem_hreg_float1";
+        agent.send(ICHEM_HREGfloat1, a); // Send raw data to Agent
+        
+        // MB Data available in the array
+//        server.log("-- ICHEM float1 data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+//        foreach (key, val in a)
+//        {
+//            server.log("device ICHEM key: "+key+" val: "+val)
+//        }
+     
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read ICHEM float1 MODBUS registers!");
+        nv.MB_ADDR_ICHEMfloat1_Found--; // Didn't find ICHEM Modbus Data
+    }
+} // function logMB_ICHEMfloat1() 
+
+// Get Modbus coil register data & decode it
+function logMB_ICHEMcoils() 
+{
+    // If MB communication not working, quit trying after 
+    // MB_timesfound tries
+    if (nv.MB_ADDR_ICHEMcoils_Found < nv.MB_timesfound) return;
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    a = MBreadMultipleCoils(MB_ADDR_ICHEM, 0, 40);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 2) 
+    {   
+        nv.MB_ADDR_ICHEMcoils_Found++; // Found TM Modbus data
+        // MB Data available in the array
+        const ICHEM_coils = "iChem_coils";
+        agent.send(ICHEM_coils, a); // Send raw data to Agent
+        
+    } else 
+    {   // no data in MB array
+        server.log("Can't read ICHEM MODBUS Coils!");
+        nv.MB_ADDR_ICHEMcoils_Found--; // Didn't find TM Modbus data
+//        MB_ADDR_TimeMark = -1;
+    }
+} // function logMB_ICHEMcoils() 
+
+// Try to locate Modbus devices by cycling through addresses
+// and looking for a response
+function findMB() 
+{
+//    local d = date(); 
+
+    // The a stands for all bytes but I didn't want to type it out so many times.
+    local a = [ ];
+    local addr;
+    for(local addr = 0; addr < 25; addr++ )
+    {
+        a = MBreadHoldingRegisters(addr, 0, 20);
+    
+    // Some of these are supposed to be unsigned.  Are those being read correctly?
+    if (a.len() > 8) 
+    {   // MB Data available in the array
+        server.log("-- MB data array length: "+a.len());
+//        server.log(format("== APG Dev addr: %d; Units: %d; App type: %d; a[3]: %d", a[0], a[1], a[2], a[3]));   
+        foreach (key, val in a)
+        {
+            server.log("MB key: "+key+" val: "+val)
+        }
+        findMBaddr = 0; // found MB info
+        server.log("Found MB info on addr: "+addr);
+    } else 
+    {   // no data in APG MB array
+        server.log("Can't read MODBUS address: "+addr);
+    }
+    } // end for loop
+} // function findMB()
+
+//*************************************************
+
+// Send data to the agent
+function transmitData() 
+{
+    // send gathered data
+    nv.sensor[BOOTCOUNT] <- nv.bootcount++;
+    nv.sensor[TIME] <- t;
+    agent.send(TABLEDATA, nv.sensor);
+//    nv.sensor = {};
+    nv.sensor.clear();
+        // rssi must be sampled while the WiFi is turned on
+        // most of the time the WiFi is off, except here, where data has 
+        // just been transmitted.
+    nv.sensor[RSSI] <- imp.rssi();
+    nv.sensor[MEMORY] <- imp.getmemoryfree();
+    nv.sensor[LIGHTLEVEL] <- hardware.lightlevel();
+    nv.sensor[WAKEREASON] <- hardware.wakereason();
+}   // function transmitData() 
+
+// log data in between transmit times
+function logdata() 
+{
+//  local min = (t/60) % 60;
+  local sec = t % 60;
+  
+  HW_RegulatorCntl.write(REGULATOR_ON); // turn on regulator
+  imp.sleep(REGULATOR_DELAY); // Wait for regulator voltage to come up
+        // While waiting for regulator, read switches
+    nv.sensor[SWITCH1] <- HW_Switch1.read();
+    nv.sensor[SWITCH2] <- HW_Switch2.read();
+    // also read battery voltage on pin 9
+    local adval = HW_BatV.read(); // 0 - 65535
+    
+    local volts = (hardware.voltage()/4096.0) * (adval/16.0); 
+    // R1 = 357k and R2 = 96.7k (actual measurements)
+    // Vbat = V (R1 + R2)/R2    // from the voltage divider
+    // need to measure resistors for accuracy
+    //   local vbat = volts * (323.6 + 1001.1.0)/100.0;
+    // measured ratio of 4.59
+    local vbat = volts * 4.59;
+    nv.sensor[VBAT] <- vbat;
+    // Get sensor voltage
+  local Analog1Volts = (hardware.voltage()/4096.0) * (HW_Analog1In.read()/16.0); // calc pressure here 
+    nv.sensor[t] <- Analog1Volts;
+
+        // Implelent hysteresis algorithm
+        // Check for first time over the threshold   
+  if (Analog1Volts > nv.Analog1Volts_hi && nv.Analog1Volts_switch == 0)
+  {
+      XmitNow = 1; // force an immediate xmit
+      nv.Analog1Volts_switch = 1; // indicate over the threshold
+      server.log("--! Force xmit logdata");
+  }
+  
+  if (Analog1Volts < nv.Analog1Volts_lo && nv.Analog1Volts_switch == 1)
+  {
+      nv.Analog1Volts_switch = 0; // indicate under the threshold
+  }
+  
+    // Get temperature data from pin 8
+    local analogval = HW_Temp.read(); // 0 - 65535 
+    
+    local tempC = ((analogval * 0.00005035)-0.5)*100.0;                                                                                                           
+    local tempF = (9.0/5.0)*tempC + 32.0;
+    nv.sensor[TEMP] <- tempF;
+    
+    // get analog data from IMP002 channel
+    Analog1Volts = (hardware.voltage()/4096.0) * (HW_AnalogIn002.read()/16.0); // calc pressure here 
+    nv.sensor[ANALOG002] <- Analog1Volts;
+    
+  HW_RegulatorCntl.write(REGULATOR_OFF); // turn off regulator
+}   // function logdata() 
+
+// log pressure sensor data only
+// used when in Modbus mode
+function logpressure() 
+{
+  local sec = t % 60;
+  
+  HW_RegulatorCntl.write(REGULATOR_ON); // turn on regulator
+  imp.sleep(REGULATOR_DELAY); // Wait for regulator voltage to come up
+    // Get sensor voltage
+  local Analog1Volts = (hardware.voltage()/4096.0) * (HW_Analog1In.read()/16.0); // calc pressure here 
+  nv.sensor[t] <- Analog1Volts;
+  
+        // Implement hysteresis algorithm
+        // Check for first time over the threshold   
+  if (Analog1Volts > nv.Analog1Volts_hi && nv.Analog1Volts_switch == 0)
+  {
+      XmitNow = 1; // force an immediate xmit
+      nv.Analog1Volts_switch = 1; // indicate over the threshold
+      server.log("--! Force xmit logpressure");
+  }
+  
+  if (Analog1Volts < nv.Analog1Volts_lo && nv.Analog1Volts_switch == 1)
+  {
+      nv.Analog1Volts_switch = 0; // indicate under the threshold
+  }
+  
+  // Get temperature data from pin 8
+    local analogval = HW_Temp002.read(); // 0 - 65535 
+    
+    local tempC = ((analogval * 0.00005035)-0.5)*100.0;                                                                                                           
+    local tempF = (9.0/5.0)*tempC + 32.0;
+    nv.sensor[TEMP002] <- tempF;
+    
+    // get analog data from IMP002 channel
+    Analog1Volts = (hardware.voltage()/4096.0) * (HW_AnalogIn002.read()/16.0); // calc pressure here 
+    nv.sensor[ANALOG002] <- Analog1Volts;
+}   // function logpressure() 
+
+// callback for switch1 - transducer mode
+function hw_switch1t()
+{
+    local sw = HW_Switch1.read();
+    server.log("Switch 1 changed state: "+sw);
+    XmitNow = 1; // force transmit
+    dispatch(); // send report
+} // function hw_switch1()
+
+// callback for  hall switch on pin1 - pump mode
+function hw_switch1p()
+{
+//    local sw = HW_Switch1.read();
+//    server.log("Pin 1 changed state: "+sw);
+    server.log("Pin 1 changed state");
+    XmitNow = 1; // force transmit
+    dispatch(); // send report
+} // function hw_switch1()
+
+
+// callback for Hall switch 1 flowcount - pump mode
+function hall1()
+{
+    server.log("-Hall 1 changed state");
+    HW_UART002.write("Hall1");
+}   // function hall1()
+
+// callback for Hall switch 2 - IMP002
+function hall2()
+{
+    server.log("-Hall 2 changed state");
+}   // function hall2()
+
+// called when bytes are received on RS-232
+// Function triggered by receipt of a byte from the connected computer
+// Adds the input byte as an alphanumeric character to a buffer string
+// which is displayed in the log when the remote user hits Enter
+input_string <- ""; // initialize string
+function readback()
+{
+    local byte = HW_UART002.read();
+        // ignore initial input
+    if (byte == -1) return;
+    if (byte == 13)
+    {   // handle receipt of CR
+        // Output string and reset input_string for next set of chars
+        server.log("Sent string: "+input_string);
+        input_string = ""; // reset string
+    } else
+    {
+        // add input character to input_string buffer
+        input_string = input_string + chr(byte);
+    }
+}   // function readback()
+// receive individual characters from RS-232
+function chr(ascii_value)
+{
+    // convert passed integer value ASCII code
+    // into a character string
+    if (ascii_value < 32) return "";
+    return format("%c", ascii_value);
+} // function chr(ascii_value)
+
+// Hardware set-up
+// Hardware seems to need reinitialized when coming out of deep sleep
+function hardwareSetUp()
+{
+/* redundant
+    if(nv.PUMP == NOT_CONFIGURED)
+    {
+        server.log("-Device hardware not configured!");
+        return;
+    }
+*/
+    // IMP002 I/O pins - Available in both modes
+    HW_Temp002.configure(ANALOG_IN); // temperature sensor
+    HW_AnalogIn002.configure(ANALOG_IN); // second analog channel
+            // UART connection to RS-232 channel
+            // Pin 6 and Pin E are used for Write & Read
+            // readback function called for incoming bytes
+    HW_UART002.configure(9600, 8, PARITY_NONE, 1, NO_CTSRTS, readback);
+     
+    // Analog on pin7 is avail in both modes
+    HW_Analog1In.configure(ANALOG_IN);
+    // Digital Write on pin 5 - control 3V regulator for sensors                                                                                                      
+    HW_RegulatorCntl.configure(DIGITAL_OUT);
+    
+//  PUMP_MODE = 1;
+//  TRANSDUCER_MODE = 0; 
+    if(nv.PUMP == PUMP_MODE)
+    {
+        HW_RegulatorCntl.write(REGULATOR_ON); // turn on regulator
+            // UART connection to RS-485 channel
+            // Pin 8 and Pin 9 are used for Write & Read
+            // Pins 1 & 2 are not used for uart and are reassigned below
+        HW_MBUart1.configure(9600, 8, PARITY_NONE, 1, NO_CTSRTS);
+            // Pin 1 is Hall switch pulse input
+//        HW_FlowCount.configure(DIGITAL_IN_PULLUP, hall1); // flow meter count
+//        HW_FlowCount.configure(DIGITAL_IN_PULLUP, hw_switch1p); // flow meter count
+        HW_Hall001.configure(DIGITAL_IN_WAKEUP, hw_switch1p); // flow meter count
+
+        HW_Hall002.configure(DIGITAL_IN_PULLUP, hall2); // second hall switch
+            // Pin 2 control direction of RS-485 Read or Write
+        HW_ModBusDir.configure(DIGITAL_OUT);
+        // Digital Write on pin 5 - control 3V regulator for sensors                                                                                                      
+//        HW_RegulatorCntl.configure(DIGITAL_OUT);
+            // Pressure Sensor input
+    } else
+    {   // Transducer Mode
+//        server.log("Transducer Mode - Hardware Analog Input");
+        // switch1 - call back function switch1
+        HW_Switch1.configure(DIGITAL_IN_WAKEUP, hw_switch1t);
+        // switch2
+        HW_Switch2.configure(DIGITAL_IN);
+        // Digital Write on pin 5 - control 3V regulator for sensors                                                                                                      
+//        HW_RegulatorCntl.configure(DIGITAL_OUT);
+        // Analog read on pin 8 for temp                                                                                                                                  
+        HW_Temp.configure(ANALOG_IN);
+        // Analog read on pin 9 for scaled battery voltage                                                                                                                             
+        HW_BatV.configure(ANALOG_IN); 
+    }
+}   // function hardwareSetUp()
+
+// dispatch logdata() and transmitdata() if time for xmit
+function dispatch()
+{
+//    wakeReason(); // How did Imp wake up?
+    // When the Imp comes out of deep sleep, it starts here
+    // log an ADC value each 10 sec, only tell the server each minute 
+    t = time();
+    if(nv.PUMP == NOT_CONFIGURED)
+    {
+        server.log("--Waiting for configuration--");
+//        return;
+        
+//        imp.onidle(function()
+//        {
+//            server.log("--Waiting for configuration--");
+//            server.log("-Device not configured!");
+        imp.wakeup(2.0, dispatch);
+            
+//            imp.sleep(5.0);
+//            server.log("--after sleep");
+//            dispatch();
+//        });
+//        server.log("--after onidle");
+        return;
+    }
+    imp.onidle(null);
+        // Now we can set-up hardware with nv.PUMP defined
+    hardwareSetUp();
+//  PUMP_MODE = 1;
+//  TRANSDUCER_MODE = 0;     
+    if(nv.PUMP == PUMP_MODE)
+    {
+        // Do this once
+        if(findMBaddr == 1)
+        {
+          findMB();  
+        }
+
+       server.log(format("** TimeMark: %d; TimeMark coils: %d; PT-500: %d; MPX: %d; \nICHEM: %d; ICHEM1: %d; ICHEMfloat: %d; ICHEMfloat1: %d; ICHEMcoils: %d", 
+                      nv.MB_ADDR_TimeMark_Found,
+                      nv.MB_ADDR_TimeMarkCoils_Found,
+                      nv.MB_ADDR_PT500_Found,
+                      nv.MB_ADDR_MPX_Found, 
+                      nv.MB_ADDR_ICHEM_Found,
+                      nv.MB_ADDR_ICHEM1_Found,
+                      nv.MB_ADDR_ICHEMfloat_Found,
+                      nv.MB_ADDR_ICHEMfloat1_Found,
+                      nv.MB_ADDR_ICHEMcoils_Found));
+                      
+//        str = "";
+ 
+        // Give the Modbus test several tries before
+        // shutting it off
+
+            logMB_TimeMark(); // sample MB registers
+            
+            logMBcoils_TimeMark(); // read old TM coils
+
+//        imp.sleep( 0.5 );
+        
+            logMB_APG_ireg();
+            
+//        imp.sleep( 0.5 );
+            
+            logMB_APG();
+
+//        imp.sleep( 0.5 );
+        
+            logMB_MPX_ireg();
+
+            logMB_ICHEM();
+            
+            logMB_ICHEM1();
+            
+            logMB_ICHEMfloat();
+            
+            logMB_ICHEMfloat1();
+            
+            logMB_ICHEMcoils();
+
+        logpressure(); 
+    } else if (nv.PUMP == TRANSDUCER_MODE)
+    {
+        logdata();  // sample analog data first
+    } else
+    {
+        server.log("---*** PUMP mode not set");
+    }
+        // check to see if time to xmit
+    if (t >= (nv.time + nv.XMIT_PERIOD) || XmitNow)
+    {
+        nv.sensor[PIN1_ALERT] <- XmitNow;
+        XmitNow = 0; // set back to false
+        // increment bootcount with each xmit
+//        nv.sensor[BOOTCOUNT] <- nv.bootcount++;
+        // send xmit time data
+        nv.time = t; // save xmit time
+            // get Imp rssi and memory info
+            // only send at startup
+            // tell agent when to expect next transmission
+        server.expectonlinein(nv.XMIT_PERIOD);
+        transmitData(); // transmit the data to agent
+    }
+
+        // Sync to the sample period - sleep for one sample period
+    if(nv.PUMP == PUMP_MODE)
+    {
+        imp.onidle(function()
+        {imp.wakeup(nv.SAMPLE_PERIOD - (time() % nv.SAMPLE_PERIOD), dispatch )
+        });
+    } else
+    {
+        imp.onidle(function() { imp.deepsleepfor(nv.SAMPLE_PERIOD - (time() % nv.SAMPLE_PERIOD)); });
+    }
+}   // function dispatch()
+
+// if just turned on, and nv doesn't exist
+if (!("nv" in getroottable())) 
+{
+    server.log("++++++++++ Start 1st Pass ++++++++++");
+    
+    imp.enableblinkup(true);                                                                                                                                          
+    
+    local endtime = hardware.millis() + 10 * 1000; // set the end time by adding msecs                                                                                
+    while((endtime - hardware.millis()) > 0) 
+    {                                                                                                      
+        if (hardware.millis()%1000 == 0) 
+        {                                                                                                                            
+            server.log("Blink up anyone?");                                                                                                                           
+        }                                                                                                                                                             
+        if ((endtime - hardware.millis()) < 0) 
+        { // time expired?                                                                                                     
+            break;                                                                                                                                                    
+        }                                                                                                                                                             
+    }  
+    
+    nv <- {     // data = "",  // data string accumulates data with each sample period
+            sensor = {}, // table for sensor data
+            MB = {},    // table for MB register
+            meta = {},  // meta data about this device
+            time = t,  // time stores the time at beginning of each transmission
+            bootcount = 0, // bootcount is incremented on each wakeup
+            
+                // default settings
+            PUMP = NOT_CONFIGURED, // Pump controller Module?
+            XMIT_PERIOD = 10, // Time between transmissions
+            SAMPLE_PERIOD = 10, // Time between samples
+            TIMER_HANDLE = 0,
+            
+            // Set up trigger points
+            // The trigger threshold has an upper and lower value
+            // based on the range in order to implement hysteresis
+            IMP_ANALOG1_THRESHOLD = -1,
+            IMP_ANALOG1_RANGE = 0.1,
+            
+            
+            // Check for hi and lo conditions using hysteresis algorithm
+            // Analog channel 1
+            Analog1Volts_hi = 1.1, // High voltage
+            Analog1Volts_lo = 1.0, // Low voltage
+                // Switch tells us if above the trigger or below
+            Analog1Volts_switch = 0, // switch starts at off
+            
+            MB_ADDR_TimeMark_Found = 0,
+            MB_ADDR_TimeMarkCoils_Found = 0,
+            MB_ADDR_PT500_Found = 0,
+            MB_ADDR_MPX_Found  = 0,
+            MB_ADDR_ICHEM_Found = 0,
+            MB_ADDR_ICHEM1_Found = 0,
+            MB_ADDR_ICHEMfloat_Found = 0,
+            MB_ADDR_ICHEMfloat1_Found = 0,
+            MB_ADDR_ICHEMcoils_Found = 0,
+ 
+            MB_timesfound = -5,
+        };
+        // send Imp information to agent
+        nv.meta[SSID] <- imp.getssid();
+        nv.meta[DEVID] <- hardware.getdeviceid();
+        nv.meta[IMPTYPE] <- "IMP001";
+            if ("pinA" in hardware)
+        {
+//            server.log("--Running IMP002 module");
+            nv.meta[IMPTYPE] <- "IMP002";
+        }
+        agent.send(METADATA, nv.meta);
+}
+
+    // dispatch logs data and then decides if
+    // it is time to send data package to agent
+dispatch(); // log and transmit
+// server.log("---DEVICE CODE END---");
+
